@@ -1,12 +1,15 @@
 import 'dart:async';
 
+import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../core/db/app_db.dart';
 import '../../../core/state/month_cubit.dart';
 import '../../../core/ui/month_picker_sheet.dart';
 import '../../../core/utils/money.dart';
-import '../../categories/data/category_repository.dart';
+import '../../reports/presentation/bloc/export_bloc.dart';
+import '../../reports/presentation/bloc/export_event.dart';
 import '../bloc/tranasaction_bloc.dart';
 import '../bloc/tranasaction_event.dart';
 import '../bloc/tranasaction_state.dart';
@@ -22,20 +25,23 @@ class TransactionsListScreen extends StatefulWidget {
 class _TransactionsListScreenState extends State<TransactionsListScreen> {
   final _searchCtrl = TextEditingController();
 
-  // filters
   String _q = '';
   String _type = 'all'; // all | expense | income
-  String? _nodeId; // category/subcategory node id
+
+  /// can be either a categoryId (cat_*) or subcategoryId (sub_*)
+  String? _pickedNodeId;
+
   int? _minMinor;
   int? _maxMinor;
 
-  // undo delete (UI-level)
+  // undo delete (Transaction.id is String)
   final Map<String, Timer> _deleteTimers = {};
   final Set<String> _pendingDeleteIds = {};
 
-  // cache for category filter
-  List<dynamic> _nodes = []; // CategoryNode list, kept dynamic to avoid compile if your model differs
+  // category/subcategory data
   bool _loadingNodes = false;
+  final Map<String, CategoryNode> _idToNode = {};
+  final Map<String, String> _subToParent = {}; // subId -> catId
 
   String? _lastMonthId;
 
@@ -43,7 +49,6 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
   void initState() {
     super.initState();
 
-    // initial load (DON’T use context.watch in initState)
     _lastMonthId = context.read<MonthCubit>().state;
     context.read<TransactionBloc>().add(LoadMonthTransactions(_lastMonthId!));
 
@@ -51,19 +56,34 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
       setState(() => _q = _searchCtrl.text.trim().toLowerCase());
     });
 
-    _loadCategoryNodes();
+    _loadNodes();
   }
 
-  Future<void> _loadCategoryNodes() async {
+  Future<void> _loadNodes() async {
     try {
       setState(() => _loadingNodes = true);
-      final repo = context.read<CategoryRepository>();
-      final items = await repo.getCategories(); // must return list with .id and .name
+      final db = context.read<AppDatabase>();
+
+      final rows = await (db.select(db.categoryNodes)
+        ..where((n) => n.archived.equals(false))
+        ..orderBy([
+              (n) => OrderingTerm(expression: n.sortOrder),
+              (n) => OrderingTerm(expression: n.name),
+        ]))
+          .get();
+
+      _idToNode.clear();
+      _subToParent.clear();
+
+      for (final n in rows) {
+        _idToNode[n.id] = n;
+        if (n.type == 'subcategory' && n.parentId != null) {
+          _subToParent[n.id] = n.parentId!;
+        }
+      }
+
       if (!mounted) return;
-      setState(() {
-        _nodes = items;
-        _loadingNodes = false;
-      });
+      setState(() => _loadingNodes = false);
     } catch (_) {
       if (!mounted) return;
       setState(() => _loadingNodes = false);
@@ -89,24 +109,37 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
     _pendingDeleteIds.clear();
   }
 
-  bool _matches(dynamic tx) {
-    // tx must have: id, type, amountMinor, dateMillis, note?, nodeId?
-    final int id = tx.id as int;
-    if (_pendingDeleteIds.contains(id)) return false;
+  bool _matches(Transaction tx) {
+    if (_pendingDeleteIds.contains(tx.id)) return false;
 
-    final String type = (tx.type as String?) ?? '';
-    final int amount = (tx.amountMinor as int?) ?? 0;
-    final String note = ((tx.note as String?) ?? '').toLowerCase();
-    final String nodeId = (tx.nodeId as String?) ?? '';
+    if (_type != 'all' && tx.type != _type) return false;
 
-    if (_type != 'all' && type != _type) return false;
+    final amount = tx.amountMinor;
     if (_minMinor != null && amount < _minMinor!) return false;
     if (_maxMinor != null && amount > _maxMinor!) return false;
-    if (_nodeId != null && _nodeId!.isNotEmpty && nodeId != _nodeId) return false;
+
+    // Filter by category/subcategory (tx stores ONLY subcategoryId)
+    if (_pickedNodeId != null && _pickedNodeId!.isNotEmpty) {
+      final picked = _pickedNodeId!;
+      final subId = tx.subcategoryId; // nullable for income
+
+      // picked a subcategory -> exact match
+      if (picked.startsWith('sub_')) {
+        if (subId == null || subId != picked) return false;
+      }
+
+      // picked a category -> match by subcategory parentId
+      if (picked.startsWith('cat_')) {
+        if (subId == null) return false;
+        final parent = _subToParent[subId];
+        if (parent != picked) return false;
+      }
+    }
 
     if (_q.isNotEmpty) {
-      final amountText = amount.toString(); // crude but works
-      if (!note.contains(_q) && !amountText.contains(_q) && !type.contains(_q)) {
+      final note = (tx.note ?? '').toLowerCase();
+      final amountText = amount.toString();
+      if (!note.contains(_q) && !amountText.contains(_q) && !tx.type.contains(_q)) {
         return false;
       }
     }
@@ -124,7 +157,12 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
       isScrollControlled: true,
       builder: (ctx) {
         String localType = _type;
-        String? localNodeId = _nodeId;
+        String? localPicked = _pickedNodeId;
+
+        final cats = _idToNode.values.where((n) => n.type == 'category').toList()
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+        final subs = _idToNode.values.where((n) => n.type == 'subcategory').toList()
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
         return StatefulBuilder(
           builder: (ctx, setLocal) {
@@ -155,26 +193,25 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
                   const SizedBox(height: 10),
 
                   if (_loadingNodes)
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('Loading categories...'),
-                    )
+                    const Align(alignment: Alignment.centerLeft, child: Text('Loading categories...'))
                   else
                     DropdownButtonFormField<String?>(
-                      value: localNodeId,
+                      value: localPicked,
                       items: [
                         const DropdownMenuItem<String?>(value: null, child: Text('All categories')),
-                        ..._nodes.map((n) {
-                          // expects n.id and n.name
-                          final id = (n.id as String);
-                          final name = (n.name as String);
+                        ...cats.map((c) => DropdownMenuItem<String?>(
+                          value: c.id,
+                          child: Text('${c.name} (All)'),
+                        )),
+                        ...subs.map((s) {
+                          final parentName = s.parentId == null ? '' : (_idToNode[s.parentId!]?.name ?? '');
                           return DropdownMenuItem<String?>(
-                            value: id,
-                            child: Text(name),
+                            value: s.id,
+                            child: Text('$parentName > ${s.name}'),
                           );
                         }),
                       ],
-                      onChanged: (v) => setLocal(() => localNodeId = v),
+                      onChanged: (v) => setLocal(() => localPicked = v),
                       decoration: const InputDecoration(labelText: 'Category/Subcategory'),
                     ),
 
@@ -201,7 +238,7 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
                           onPressed: () {
                             setState(() {
                               _type = 'all';
-                              _nodeId = null;
+                              _pickedNodeId = null;
                               _minMinor = null;
                               _maxMinor = null;
                             });
@@ -226,7 +263,7 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
 
                             setState(() {
                               _type = localType;
-                              _nodeId = localNodeId;
+                              _pickedNodeId = localPicked;
                               _minMinor = parsedMin;
                               _maxMinor = parsedMax;
                             });
@@ -251,19 +288,13 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
     required String id,
     required String monthId,
   }) {
-    // hide immediately
     setState(() => _pendingDeleteIds.add(id));
-
-    // cancel any existing timer for same id
     _deleteTimers[id]?.cancel();
 
     final timer = Timer(const Duration(seconds: 4), () {
-      // if still pending after 4 seconds -> actually delete
       if (!mounted) return;
       if (_pendingDeleteIds.contains(id)) {
-        context.read<TransactionBloc>().add(
-          DeleteTransactionRequested(id: id, monthId: monthId),
-        );
+        context.read<TransactionBloc>().add(DeleteTransactionRequested(id: id, monthId: monthId));
         setState(() => _pendingDeleteIds.remove(id));
       }
       _deleteTimers.remove(id);
@@ -291,12 +322,11 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
   String _activeFiltersText() {
     final parts = <String>[];
     if (_type != 'all') parts.add(_type);
-    if (_nodeId != null) parts.add('category');
+    if (_pickedNodeId != null) parts.add(_pickedNodeId!.startsWith('cat_') ? 'category' : 'subcategory');
     if (_minMinor != null) parts.add('min');
     if (_maxMinor != null) parts.add('max');
     if (_q.isNotEmpty) parts.add('search');
-    if (parts.isEmpty) return 'No filters';
-    return 'Filters: ${parts.join(', ')}';
+    return parts.isEmpty ? 'No filters' : 'Filters: ${parts.join(', ')}';
   }
 
   @override
@@ -307,8 +337,6 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
         _lastMonthId = newMonthId;
 
         _clearPendingDeletes();
-
-        // reload when month changes
         context.read<TransactionBloc>().add(LoadMonthTransactions(newMonthId));
       },
       child: Builder(
@@ -328,10 +356,7 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
                     }
                   },
                 ),
-                IconButton(
-                  icon: const Icon(Icons.tune_outlined),
-                  onPressed: _openFiltersSheet,
-                ),
+                IconButton(icon: const Icon(Icons.tune_outlined), onPressed: _openFiltersSheet),
                 IconButton(
                   icon: const Icon(Icons.add),
                   onPressed: () async {
@@ -343,6 +368,24 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
                     context.read<TransactionBloc>().add(LoadMonthTransactions(monthId));
                   },
                 ),
+
+                /// ✅ EXPORT (fixed)
+                IconButton(
+                  icon: const Icon(Icons.download_outlined),
+                  onPressed: () {
+                    context.read<ExportBloc>().add(
+                      ExportFilteredRequested(
+                        monthId: monthId,
+                        query: _q.isEmpty ? null : _q,
+                        type: _type == 'all' ? null : _type,
+                        subcategoryId: _pickedNodeId,
+                        minMinor: _minMinor,
+                        maxMinor: _maxMinor,
+                      ),
+                    );
+                  },
+                ),
+
               ],
               bottom: PreferredSize(
                 preferredSize: const Size.fromHeight(84),
@@ -369,10 +412,7 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
                       const SizedBox(height: 8),
                       Align(
                         alignment: Alignment.centerLeft,
-                        child: Text(
-                          _activeFiltersText(),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
+                        child: Text(_activeFiltersText(), style: Theme.of(context).textTheme.bodySmall),
                       ),
                     ],
                   ),
@@ -403,9 +443,15 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
                     final amount = minorToRupees(t.amountMinor);
                     final date = DateTime.fromMillisecondsSinceEpoch(t.dateMillis).toLocal();
 
+                    final subName = t.subcategoryId == null ? null : _idToNode[t.subcategoryId!]?.name;
+
                     return ListTile(
                       title: Text('${isExpense ? "Expense" : "Income"}  $amount'),
-                      subtitle: Text('${date.toString().substring(0, 16)}  |  ${t.note ?? ""}'),
+                      subtitle: Text(
+                        '${date.toString().substring(0, 16)}'
+                            '  |  ${subName ?? (t.subcategoryId ?? "")}'
+                            '  |  ${t.note ?? ""}',
+                      ),
                       trailing: IconButton(
                         icon: const Icon(Icons.delete),
                         onPressed: () => _deleteWithUndo(id: t.id, monthId: monthId),

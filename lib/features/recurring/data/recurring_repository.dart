@@ -131,17 +131,17 @@ class RecurringRepository {
         // ✅ Insert transaction matching YOUR Transactions table
         await db.into(db.transactions).insert(
           TransactionsCompanion.insert(
-            type: t.type,
-            amountMinor: t.amountMinor,
-            dateMillis: _dateMillisForMonth(monthId, t.dayOfMonth),
             monthId: monthId,
-            subcategoryId: t.subcategoryId == null
-                ? const Value.absent()
-                : Value(t.subcategoryId!), // ✅ FIX
+            amountMinor: t.amountMinor,
+            type: t.type,
+            dateMillis: _dateMillisForMonth(monthId, t.dayOfMonth),
+            subcategoryId: t.type == 'expense'
+                ? Value(t.subcategoryId)   // can be null if you saved wrong, so validate
+                : const Value(null),
             note: Value(t.note ?? '[Recurring] ${t.title}'),
-            updatedAt: Value(now),
           ),
         );
+
 
         // mark applied (prevents duplicates)
         await db.into(db.recurringApplied).insert(

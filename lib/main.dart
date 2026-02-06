@@ -6,6 +6,8 @@ import 'core/app_shell.dart';
 import 'core/db/app_db.dart';
 import 'core/state/month_cubit.dart';
 import 'core/utils/month_id.dart';
+import 'features/backup/data/backup_repository.dart';
+import 'features/backup/presentaion/bloc/backup_bloc.dart';
 import 'features/budget/data/budget_repository.dart';
 import 'features/budget/presentation/bloc/budget_bloc.dart';
 import 'features/categories/data/category_repository.dart';
@@ -17,6 +19,7 @@ import 'features/recurring/presentation/bloc/recurring_bloc.dart';
 import 'features/reports/data/export_repository.dart';
 import 'features/reports/data/reports_repository.dart';
 import 'features/reports/presentation/bloc/export_bloc.dart';
+import 'features/reports/presentation/reportsbloc/reports_bloc.dart';
 import 'features/transactions/bloc/tranasaction_bloc.dart';
 import 'features/transactions/data/transaction_repository.dart';
 import 'features/transactions/presentation/transaction_list_screen.dart';
@@ -46,6 +49,8 @@ class MonthlyBudgetApp extends StatelessWidget {
         RepositoryProvider(create: (_) => ExportRepository(db)),
         RepositoryProvider(create: (_) => ReportsRepository(db)),
         RepositoryProvider(create: (_) => RecurringRepository(db)),
+        RepositoryProvider(create: (_) => BackupRepository(db)),
+
 
       ],
       child: MultiBlocProvider(
@@ -58,9 +63,11 @@ class MonthlyBudgetApp extends StatelessWidget {
             ),
           ),
           BlocProvider(create: (ctx) => DashboardBloc(ctx.read<DashboardRepository>())),
-          BlocProvider(create: (ctx) => ExportBloc(ctx.read<ExportRepository>())),
+          BlocProvider(create: (ctx) => ExportBloc(repo: ctx.read<ExportRepository>())),
           BlocProvider(create: (_) => MonthCubit(currentMonthId())),
           BlocProvider(create: (ctx) => RecurringBloc(repo: ctx.read<RecurringRepository>())),
+          BlocProvider(create: (ctx) => BackupBloc(repo: ctx.read<BackupRepository>())),
+          BlocProvider(create: (ctx) => ReportsBloc(reportsRepo: ctx.read<ReportsRepository>(), budgetRepo: ctx.read<BudgetRepository>(),),),
 
         ],
         child: MaterialApp(

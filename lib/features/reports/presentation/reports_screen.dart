@@ -1,60 +1,43 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:smartbudget/features/reports/presentation/reportsbloc/reports_bloc.dart';
+import 'package:smartbudget/features/reports/presentation/reportsbloc/reports_event.dart';
+import 'package:smartbudget/features/reports/presentation/reportsbloc/reports_state.dart';
 
-import '../../../core/db/app_db.dart';
 import '../../../core/state/month_cubit.dart';
 import '../../../core/ui/month_picker_sheet.dart';
 import '../../../core/utils/money.dart';
-import '../data/reports_repository.dart';
-import '../../../core/db/report_models.dart';
-import '../../budget/data/budget_repository.dart';
-
-class ReportsScreen extends StatelessWidget {
+class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
 
-  int _projectMinor(int spentMinor, int daysElapsed, int daysInMonth) {
-    if (daysElapsed <= 0) return spentMinor;
-    return ((spentMinor / daysElapsed) * daysInMonth).round();
+  @override
+  State<ReportsScreen> createState() => _ReportsScreenState();
+}
+
+class _ReportsScreenState extends State<ReportsScreen> {
+  String? _lastMonth;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final monthId = context.watch<MonthCubit>().state;
+
+    if (_lastMonth != monthId) {
+      _lastMonth = monthId;
+      context.read<ReportsBloc>().add(LoadReports(monthId: monthId));
+    }
   }
 
-  List<_CutSuggestion> _buildCutPlan({
-    required int gapMinor,
-    required List<CategoryCardRow> topCats,
-  }) {
-    var remaining = gapMinor;
-    final out = <_CutSuggestion>[];
-
-    // simple plan: cut from biggest categories first, max 20% per category
-    for (final c in topCats) {
-      if (remaining <= 0) break;
-
-      final maxCut = (c.spent * 0.20).round(); // 20%
-      if (maxCut <= 0) continue;
-
-      final cut = remaining < maxCut ? remaining : maxCut;
-      out.add(_CutSuggestion(
-        name: c.categoryName,
-        cutMinor: cut,
-        pct: (cut / (c.spent == 0 ? 1 : c.spent)) * 100.0,
-      ));
-      remaining -= cut;
-    }
-
-    return out;
+  double _ratio(int a, int b) {
+    if (b <= 0) return 0;
+    final r = a / b;
+    if (r.isNaN || r.isInfinite) return 0;
+    return r.clamp(0, 1).toDouble();
   }
 
   @override
   Widget build(BuildContext context) {
     final monthId = context.watch<MonthCubit>().state;
-
-    final reportsRepo = context.read<ReportsRepository>();
-    final budgetRepo = context.read<BudgetRepository>();
-
-    final selected = MonthCubit.toDate(monthId);
-    final now = DateTime.now();
-    final isCurrentMonth = (now.year == selected.year && now.month == selected.month);
-    final daysInMonth = DateTime(selected.year, selected.month + 1, 0).day;
-    final daysElapsed = isCurrentMonth ? now.day.clamp(1, daysInMonth) : daysInMonth;
 
     return Scaffold(
       appBar: AppBar(
@@ -66,184 +49,142 @@ class ReportsScreen extends StatelessWidget {
               final picked = await showMonthPickerSheet(context, MonthCubit.toDate(monthId));
               if (picked != null && context.mounted) {
                 context.read<MonthCubit>().setFromDate(picked);
+                // Load handled by didChangeDependencies
               }
             },
           ),
+          IconButton(
+            icon: const Icon(Icons.refresh_outlined),
+            onPressed: () => context.read<ReportsBloc>().add(LoadReports(monthId: monthId, force: true)),
+          ),
         ],
       ),
-      body: FutureBuilder(
-        future: Future.wait([
-          reportsRepo.monthTotals(monthId),
-          reportsRepo.topCategories(monthId),
-          reportsRepo.topSubcategories(monthId),
-          budgetRepo.getOrCreateMonth(monthId),
-          budgetRepo.getLimitsForMonth(monthId),
-        ]),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-
-          final totals = snapshot.data![0] as MonthTotals;
-          final topCats = snapshot.data![1] as List<CategoryCardRow>;
-          final topSubs = snapshot.data![2] as List<SubcategoryRow>;
-          final month = snapshot.data![3] as BudgetMonth;
-          final limits = snapshot.data![4] as Map<String, int>;
-
-          final totalSpent = totals.totalSpent;
-          final totalIncome = totals.totalIncome;
-
-          final totalBudget = month.totalBudgetMinor;
-          final savingTarget = month.savingTargetMinor;
-          final allowedSpend = (totalBudget - savingTarget);
-
-          // Forecast (only meaningful for current month with a budget)
-          final projectedSpent = isCurrentMonth ? _projectMinor(totalSpent, daysElapsed, daysInMonth) : totalSpent;
-          final projectedSaving = totalBudget > 0 ? (totalBudget - projectedSpent) : 0;
-
-          final savingNow = totalBudget > 0 ? (totalBudget - totalSpent) : 0;
-          final savingGapNow = savingTarget > 0 ? (savingTarget - savingNow) : 0;
-
-          final projectedGap = (savingTarget > 0) ? (savingTarget - projectedSaving) : 0;
-
-          // Overspend risks (projected vs category limit if we can map categoryId->limit)
-          final overspends = <_OverspendRow>[];
-          for (final c in topCats) {
-            final limit = limits[c.categoryId]; // IMPORTANT: CategoryCardRow must include categoryId
-            if (limit == null) continue;
-
-            final proj = isCurrentMonth ? _projectMinor(c.spent, daysElapsed, daysInMonth) : c.spent;
-            if (proj > limit) {
-              overspends.add(
-                _OverspendRow(
-                  name: c.categoryName,
-                  limitMinor: limit,
-                  projectedMinor: proj,
-                  overByMinor: proj - limit,
-                ),
-              );
-            }
-          }
-          overspends.sort((a, b) => b.overByMinor.compareTo(a.overByMinor));
-
-          // Top leaks (subcategories)
-          final denom = totalSpent == 0 ? 1 : totalSpent;
-          final leaks = topSubs.take(5).map((s) {
-            final pct = (s.spent / denom) * 100;
-            return _LeakRow(
-              name: s.subcategoryName,
-              spentMinor: s.spent,
-              pct: pct,
-            );
-          }).toList();
-
-          // Cut plan to hit saving target (based on projected gap)
-          final needCut = projectedGap > 0 ? projectedGap : 0;
-          final cutPlan = needCut > 0 ? _buildCutPlan(gapMinor: needCut, topCats: topCats) : <_CutSuggestion>[];
-
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _card(
-                title: 'Summary',
-                children: [
-                  Text('Spent: ${minorToRupees(totalSpent)}'),
-                  Text('Income: ${minorToRupees(totalIncome)}'),
-                  const SizedBox(height: 8),
-                  Text('Budget: ${minorToRupees(totalBudget)}'),
-                  Text('Saving Target: ${minorToRupees(savingTarget)}'),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              _card(
-                title: 'Saving Status',
-                children: [
-                  if (totalBudget <= 0) const Text('Set a total budget to unlock saving insights.'),
-                  if (totalBudget > 0 && savingTarget <= 0) const Text('Set a saving target to unlock recommendations.'),
-                  if (totalBudget > 0 && savingTarget > 0) ...[
-                    Text('Saving Now: ${minorToRupees(savingNow)}'),
-                    Text('Gap Now: ${savingGapNow > 0 ? minorToRupees(savingGapNow) : "On track"}'),
-                    const SizedBox(height: 8),
-                    if (isCurrentMonth) ...[
-                      Text('Projected Spend: ${minorToRupees(projectedSpent)}'),
-                      Text('Projected Saving: ${minorToRupees(projectedSaving)}'),
-                      Text('Projected Gap: ${projectedGap > 0 ? minorToRupees(projectedGap) : "On track"}'),
-                    ] else
-                      const Text('Select current month for projections.'),
-                    const SizedBox(height: 8),
-                    if (allowedSpend > 0)
-                      Text('Allowed Spend (Budget - Target): ${minorToRupees(allowedSpend)}'),
-                  ],
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              _card(
-                title: 'Top Leaks (Subcategories)',
-                children: [
-                  if (leaks.isEmpty) const Text('No subcategory data yet.'),
-                  ...leaks.map((l) => ListTile(
-                    dense: true,
-                    title: Text(l.name),
-                    subtitle: Text('${l.pct.toStringAsFixed(1)}% of spending'),
-                    trailing: Text(minorToRupees(l.spentMinor)),
-                  )),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              _card(
-                title: 'Overspend Risks (Projected vs Limits)',
-                children: [
-                  if (!isCurrentMonth) const Text('Select current month to see projected overspends.'),
-                  if (isCurrentMonth && overspends.isEmpty) const Text('No projected overspends.'),
-                  if (isCurrentMonth)
-                    ...overspends.take(5).map((o) => ListTile(
-                      dense: true,
-                      title: Text(o.name),
-                      subtitle: Text('Over by: ${minorToRupees(o.overByMinor)} | Limit: ${minorToRupees(o.limitMinor)}'),
-                      trailing: Text(minorToRupees(o.projectedMinor)),
-                    )),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              _card(
-                title: 'Cut Plan (To Hit Saving Target)',
-                children: [
-                  if (!isCurrentMonth) const Text('Select current month to get actionable cut plan.'),
-                  if (isCurrentMonth && savingTarget <= 0) const Text('Set a saving target first.'),
-                  if (isCurrentMonth && savingTarget > 0 && needCut <= 0) const Text('No cuts needed. You’re on track.'),
-                  if (isCurrentMonth && savingTarget > 0 && needCut > 0) ...[
-                    Text('You need to cut ~${minorToRupees(needCut)} this month to hit target.'),
-                    const SizedBox(height: 8),
-                    ...cutPlan.map((c) => ListTile(
-                      dense: true,
-                      title: Text(c.name),
-                      subtitle: Text('Suggested cut: ${c.pct.toStringAsFixed(1)}%'),
-                      trailing: Text(minorToRupees(c.cutMinor)),
-                    )),
-                    if (cutPlan.isEmpty)
-                      const Text('Not enough spending data to build a plan yet. Add more transactions.'),
-                  ],
-                ],
-              ),
-            ],
-          );
+      body: BlocListener<ReportsBloc, ReportsState>(
+        listener: (context, s) {
+          if (s.toast == null) return;
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.toast!)));
+          context.read<ReportsBloc>().add(const ClearReportsToast());
         },
+        child: BlocBuilder<ReportsBloc, ReportsState>(
+          builder: (context, s) {
+            if (s.status == ReportsStatus.loading || s.status == ReportsStatus.idle) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (s.status == ReportsStatus.failure) {
+              return Center(child: Text('Error: ${s.error}'));
+            }
+
+            final totals = s.totals!;
+            final month = s.monthBudget;
+            final cats = s.topCategories;
+            final subs = s.topSubcategories;
+
+            final totalBudget = month?.totalBudgetMinor ?? 0;
+            final savingTarget = month?.savingTargetMinor ?? 0;
+            final allowedSpend = (totalBudget - savingTarget);
+
+            final spent = totals.totalSpent;
+            final income = totals.totalIncome;
+
+            final spendVsBudget = _ratio(spent, totalBudget);
+            final spendVsAllowed = _ratio(spent, allowedSpend);
+
+            return RefreshIndicator(
+              onRefresh: () async {
+                context.read<ReportsBloc>().add(LoadReports(monthId: monthId, force: true));
+              },
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  _card(
+                    title: 'Summary',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Spent: ${minorToRupees(spent)}'),
+                        Text('Income: ${minorToRupees(income)}'),
+                        const SizedBox(height: 10),
+                        Text('Budget: ${minorToRupees(totalBudget)}'),
+                        Text('Saving Target: ${minorToRupees(savingTarget)}'),
+                        const SizedBox(height: 12),
+                        const Text('Spent vs Total Budget'),
+                        const SizedBox(height: 6),
+                        LinearProgressIndicator(value: spendVsBudget),
+                        const SizedBox(height: 12),
+                        const Text('Spent vs Allowed Spend (Budget - Saving Target)'),
+                        const SizedBox(height: 6),
+                        LinearProgressIndicator(value: spendVsAllowed),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  _card(
+                    title: 'Top Categories (Bar Chart)',
+                    child: cats.isEmpty
+                        ? const Text('No category data yet.')
+                        : _SimpleBarList(
+                      rows: cats.map((c) {
+                        final limit = c.budgetLimit;
+                        final over = (limit != null && c.spent > limit);
+                        return _BarRow(
+                          label: c.categoryName,
+                          valueMinor: c.spent,
+                          rightText: minorToRupees(c.spent) + (over ? '  (OVER)' : ''),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  _card(
+                    title: 'Top Subcategories (Bar Chart)',
+                    child: subs.isEmpty
+                        ? const Text('No subcategory data yet.')
+                        : _SimpleBarList(
+                      rows: subs.map((x) => _BarRow(
+                        label: x.subcategoryName,
+                        valueMinor: x.spent,
+                        rightText: minorToRupees(x.spent),
+                      )).toList(),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  _card(
+                    title: 'Budget Deltas (Top Categories)',
+                    child: cats.isEmpty
+                        ? const Text('No category data yet.')
+                        : Column(
+                      children: cats.map((c) {
+                        final limit = c.budgetLimit;
+                        final remaining = c.remaining;
+
+                        final limitText = limit == null ? '-' : minorToRupees(limit);
+                        final remText = remaining == null ? '-' : minorToRupees(remaining);
+
+                        return ListTile(
+                          dense: true,
+                          title: Text(c.categoryName),
+                          subtitle: Text('Limit: $limitText | Remaining: $remText'),
+                          trailing: Text(minorToRupees(c.spent)),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
 
-  Widget _card({required String title, required List<Widget> children}) {
+  Widget _card({required String title, required Widget child}) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -251,8 +192,8 @@ class ReportsScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            ...children,
+            const SizedBox(height: 10),
+            child,
           ],
         ),
       ),
@@ -260,29 +201,46 @@ class ReportsScreen extends StatelessWidget {
   }
 }
 
-class _LeakRow {
-  _LeakRow({required this.name, required this.spentMinor, required this.pct});
-  final String name;
-  final int spentMinor;
-  final double pct;
+class _BarRow {
+  _BarRow({required this.label, required this.valueMinor, required this.rightText});
+  final String label;
+  final int valueMinor;
+  final String rightText;
 }
 
-class _OverspendRow {
-  _OverspendRow({
-    required this.name,
-    required this.limitMinor,
-    required this.projectedMinor,
-    required this.overByMinor,
-  });
-  final String name;
-  final int limitMinor;
-  final int projectedMinor;
-  final int overByMinor;
-}
+class _SimpleBarList extends StatelessWidget {
+  const _SimpleBarList({required this.rows});
+  final List<_BarRow> rows;
 
-class _CutSuggestion {
-  _CutSuggestion({required this.name, required this.cutMinor, required this.pct});
-  final String name;
-  final int cutMinor;
-  final double pct;
+  @override
+  Widget build(BuildContext context) {
+    final maxVal = rows.fold<int>(0, (m, r) => r.valueMinor > m ? r.valueMinor : m);
+    final denom = maxVal <= 0 ? 1 : maxVal;
+
+    return Column(
+      children: rows.take(8).map((r) {
+        final frac = (r.valueMinor / denom).clamp(0.0, 1.0);
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(child: Text(r.label, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  const SizedBox(width: 8),
+                  Text(r.rightText),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(value: frac),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
 }

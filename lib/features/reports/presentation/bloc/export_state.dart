@@ -1,8 +1,7 @@
 import 'dart:io';
-
 import 'package:equatable/equatable.dart';
 
-enum ExportStatus { initial, loading, success, failure }
+enum ExportStatus { idle, loading, success, failure }
 
 class ExportState extends Equatable {
   const ExportState({
@@ -12,7 +11,7 @@ class ExportState extends Equatable {
   });
 
   const ExportState.initial()
-      : status = ExportStatus.initial,
+      : status = ExportStatus.idle,
         file = null,
         error = '';
 
@@ -27,7 +26,7 @@ class ExportState extends Equatable {
   }) {
     return ExportState(
       status: status ?? this.status,
-      file: file ?? this.file,
+      file: file,
       error: error ?? this.error,
     );
   }
