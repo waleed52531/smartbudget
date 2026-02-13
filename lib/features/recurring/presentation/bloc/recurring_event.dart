@@ -15,10 +15,9 @@ class SaveRecurringTemplateRequested extends RecurringEvent {
     this.id,
     required this.title,
     required this.amountMinor,
-    required this.type,
+    required this.type, // 'income' | 'expense'
     required this.dayOfMonth,
-    this.subcategoryId,
-    this.nodeId,
+    this.subcategoryId, // only for expense
     this.note,
     required this.isActive,
   });
@@ -29,12 +28,20 @@ class SaveRecurringTemplateRequested extends RecurringEvent {
   final String type;
   final int dayOfMonth;
   final String? subcategoryId;
-  final String? nodeId;
   final String? note;
   final bool isActive;
 
   @override
-  List<Object?> get props => [id, title, amountMinor, type, dayOfMonth, nodeId, note, isActive];
+  List<Object?> get props => [
+    id,
+    title,
+    amountMinor,
+    type,
+    dayOfMonth,
+    subcategoryId,
+    note,
+    isActive,
+  ];
 }
 
 class DeleteRecurringTemplateRequested extends RecurringEvent {

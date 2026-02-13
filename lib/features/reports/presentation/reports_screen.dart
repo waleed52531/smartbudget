@@ -4,9 +4,16 @@ import 'package:smartbudget/features/reports/presentation/reportsbloc/reports_bl
 import 'package:smartbudget/features/reports/presentation/reportsbloc/reports_event.dart';
 import 'package:smartbudget/features/reports/presentation/reportsbloc/reports_state.dart';
 
+import '../../../core/db/app_db.dart';
 import '../../../core/state/month_cubit.dart';
 import '../../../core/ui/month_picker_sheet.dart';
 import '../../../core/utils/money.dart';
+import '../../categories/presentation/category_breakdown_screen.dart';
+import '../../transactions/bloc/tranasaction_bloc.dart';
+import '../../transactions/bloc/tranasaction_event.dart';
+import '../../transactions/bloc/tx_filters.dart';
+import '../../transactions/presentation/transaction_list_screen.dart';
+
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
 
@@ -35,6 +42,66 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return r.clamp(0, 1).toDouble();
   }
 
+  Future<void> _openCategoryTransactions({
+    required BuildContext context,
+    required String monthId,
+    required String categoryId,
+  }) async {
+    final db = context.read<AppDatabase>();
+    final subIds = await db.getSubcategoryIdsByCategory(categoryId);
+    if (!context.mounted) return;
+
+    context.read<TransactionBloc>().add(
+      ApplyTxFiltersRequested(
+        monthId: monthId,
+        filters: TxFilters(
+          type: TxTypeFilter.expense,
+          categoryId: categoryId,
+          categorySubcategoryIds: subIds,
+          sort: TxSort.newest,
+          search: '',
+        ),
+      ),
+    );
+    context.read<TransactionBloc>().add(LoadMonthTransactions(monthId));
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const TransactionsListScreen()),
+    );
+  }
+
+  Future<void> _openSubcategoryTransactions({
+    required BuildContext context,
+    required String monthId,
+    required String subcategoryId,
+  }) async {
+    // ✅ enforce month so your tx screen doesn't show wrong month
+    final current = context.read<MonthCubit>().state;
+    if (current != monthId) {
+      context.read<MonthCubit>().setFromDate(MonthCubit.toDate(monthId));
+    }
+
+    context.read<TransactionBloc>().add(
+      ApplyTxFiltersRequested(
+        monthId: monthId,
+        filters: TxFilters(
+          type: TxTypeFilter.expense,
+          subcategoryId: subcategoryId,
+          sort: TxSort.newest,
+          search: '',
+        ),
+      ),
+    );
+    context.read<TransactionBloc>().add(LoadMonthTransactions(monthId));
+
+    if (!context.mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const TransactionsListScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final monthId = context.watch<MonthCubit>().state;
@@ -49,13 +116,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
               final picked = await showMonthPickerSheet(context, MonthCubit.toDate(monthId));
               if (picked != null && context.mounted) {
                 context.read<MonthCubit>().setFromDate(picked);
-                // Load handled by didChangeDependencies
               }
             },
           ),
           IconButton(
             icon: const Icon(Icons.refresh_outlined),
-            onPressed: () => context.read<ReportsBloc>().add(LoadReports(monthId: monthId, force: true)),
+            onPressed: () => context.read<ReportsBloc>().add(
+              LoadReports(monthId: monthId, force: true),
+            ),
           ),
         ],
       ),
@@ -144,11 +212,37 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     child: subs.isEmpty
                         ? const Text('No subcategory data yet.')
                         : _SimpleBarList(
-                      rows: subs.map((x) => _BarRow(
-                        label: x.subcategoryName,
-                        valueMinor: x.spent,
-                        rightText: minorToRupees(x.spent),
-                      )).toList(),
+                      rows: subs.map((x) {
+                        return _BarRow(
+                          label: x.subcategoryName,
+                          valueMinor: x.spent,
+                          rightText: minorToRupees(x.spent),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // ✅ NEW: separate tappable list
+                  _card(
+                    title: 'Top Subcategories (Tap to open transactions)',
+                    child: subs.isEmpty
+                        ? const Text('No subcategory data yet.')
+                        : Column(
+                      children: subs.take(10).map((x) {
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(x.subcategoryName),
+                          trailing: Text(minorToRupees(x.spent)),
+                          onTap: () => _openSubcategoryTransactions(
+                            context: context,
+                            monthId: monthId,
+                            subcategoryId: x.subcategoryId,
+                          ),
+                        );
+                      }).toList(),
                     ),
                   ),
 
@@ -171,6 +265,23 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           title: Text(c.categoryName),
                           subtitle: Text('Limit: $limitText | Remaining: $remText'),
                           trailing: Text(minorToRupees(c.spent)),
+                          onTap: () => _openCategoryTransactions(
+                            context: context,
+                            monthId: monthId,
+                            categoryId: c.categoryId,
+                          ),
+                          onLongPress: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => CategoryBreakdownScreen(
+                                  monthId: monthId,
+                                  categoryId: c.categoryId,
+                                  categoryName: c.categoryName,
+                                ),
+                              ),
+                            );
+                          },
                         );
                       }).toList(),
                     ),

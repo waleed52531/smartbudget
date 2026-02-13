@@ -8,6 +8,8 @@ import '../features/budget/presentation/bloc/budget_bloc.dart';
 import '../features/budget/presentation/bloc/budget_event.dart';
 import '../features/budget/presentation/budget_screen.dart';
 
+import '../features/recurring/presentation/bloc/recurring_bloc.dart';
+import '../features/recurring/presentation/bloc/recurring_event.dart';
 import '../features/reports/presentation/reports_screen.dart';
 
 import '../features/transactions/bloc/tranasaction_bloc.dart';
@@ -63,9 +65,13 @@ class _AppShellState extends State<AppShell> {
     ];
 
     return BlocListener<MonthCubit, String>(
-      listener: (context, monthId) {
-        context.read<DashboardBloc>().add(LoadDashboard(monthId));
-        _reloadAll(monthId);
+      listener: (context, newMonthId) {
+        context.read<DashboardBloc>().add(LoadDashboard(newMonthId));
+        context.read<TransactionBloc>().add(LoadMonthTransactions(newMonthId));
+        context.read<BudgetBloc>().add(LoadBudgetMonth(newMonthId));
+
+        // ✅ auto-apply recurring on month change
+        context.read<RecurringBloc>().add(ApplyRecurringToMonthRequested(newMonthId));
       },
       child: Scaffold(
         body: pages[index],

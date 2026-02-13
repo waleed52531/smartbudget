@@ -46,6 +46,7 @@ dependencies:
   csv: ^6.0.0
   share_plus: ^12.0.1
   shared_preferences: ^2.5.4
+  flutter_launcher_icons: ^0.14.4
 
 dev_dependencies:
   flutter_test:
@@ -60,6 +61,14 @@ dev_dependencies:
   build_runner: ^2.10.5
   drift_dev: ^2.30.1
   file_picker: ^10.3.8
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/smart_budget_logo.png" # Create this folder and place your icon file here
+  # Optional: For adaptive icons on Android O (API 26) and newer
+  # adaptive_icon_background: "#FFFFFF"
+  # adaptive_icon_foreground: "assets/images/app_icon_foreground.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

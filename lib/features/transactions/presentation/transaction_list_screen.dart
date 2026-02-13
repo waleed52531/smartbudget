@@ -1,6 +1,3 @@
-import 'dart:async';
-
-import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -8,11 +5,11 @@ import '../../../core/db/app_db.dart';
 import '../../../core/state/month_cubit.dart';
 import '../../../core/ui/month_picker_sheet.dart';
 import '../../../core/utils/money.dart';
-import '../../reports/presentation/bloc/export_bloc.dart';
-import '../../reports/presentation/bloc/export_event.dart';
+import '../../categories/data/category_repository.dart';
 import '../bloc/tranasaction_bloc.dart';
 import '../bloc/tranasaction_event.dart';
 import '../bloc/tranasaction_state.dart';
+import '../bloc/tx_filters.dart';
 import 'add_transaction_screen.dart';
 
 class TransactionsListScreen extends StatefulWidget {
@@ -23,259 +20,318 @@ class TransactionsListScreen extends StatefulWidget {
 }
 
 class _TransactionsListScreenState extends State<TransactionsListScreen> {
-  final _searchCtrl = TextEditingController();
-
-  String _q = '';
-  String _type = 'all'; // all | expense | income
-
-  /// can be either a categoryId (cat_*) or subcategoryId (sub_*)
-  String? _pickedNodeId;
-
-  int? _minMinor;
-  int? _maxMinor;
-
-  // undo delete (Transaction.id is String)
-  final Map<String, Timer> _deleteTimers = {};
-  final Set<String> _pendingDeleteIds = {};
-
-  // category/subcategory data
-  bool _loadingNodes = false;
-  final Map<String, CategoryNode> _idToNode = {};
-  final Map<String, String> _subToParent = {}; // subId -> catId
-
   String? _lastMonthId;
 
   @override
-  void initState() {
-    super.initState();
-
-    _lastMonthId = context.read<MonthCubit>().state;
-    context.read<TransactionBloc>().add(LoadMonthTransactions(_lastMonthId!));
-
-    _searchCtrl.addListener(() {
-      setState(() => _q = _searchCtrl.text.trim().toLowerCase());
-    });
-
-    _loadNodes();
-  }
-
-  Future<void> _loadNodes() async {
-    try {
-      setState(() => _loadingNodes = true);
-      final db = context.read<AppDatabase>();
-
-      final rows = await (db.select(db.categoryNodes)
-        ..where((n) => n.archived.equals(false))
-        ..orderBy([
-              (n) => OrderingTerm(expression: n.sortOrder),
-              (n) => OrderingTerm(expression: n.name),
-        ]))
-          .get();
-
-      _idToNode.clear();
-      _subToParent.clear();
-
-      for (final n in rows) {
-        _idToNode[n.id] = n;
-        if (n.type == 'subcategory' && n.parentId != null) {
-          _subToParent[n.id] = n.parentId!;
-        }
-      }
-
-      if (!mounted) return;
-      setState(() => _loadingNodes = false);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _loadingNodes = false);
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final monthId = context.watch<MonthCubit>().state;
+    if (_lastMonthId != monthId) {
+      _lastMonthId = monthId;
+      context.read<TransactionBloc>().add(LoadMonthTransactions(monthId));
     }
   }
 
-  @override
-  void dispose() {
-    for (final t in _deleteTimers.values) {
-      t.cancel();
-    }
-    _deleteTimers.clear();
-    _pendingDeleteIds.clear();
-    _searchCtrl.dispose();
-    super.dispose();
-  }
+  Future<void> _openFilters(BuildContext context) async {
+    final root = context; // use this for Bloc/Repo access (safer than sheet ctx)
 
-  void _clearPendingDeletes() {
-    for (final t in _deleteTimers.values) {
-      t.cancel();
-    }
-    _deleteTimers.clear();
-    _pendingDeleteIds.clear();
-  }
+    final monthId = root.read<MonthCubit>().state;
+    final current = root.read<TransactionBloc>().state.filters;
+    final catRepo = root.read<CategoryRepository>();
 
-  bool _matches(Transaction tx) {
-    if (_pendingDeleteIds.contains(tx.id)) return false;
+    TxTypeFilter type = current.type;
+    TxSort sort = current.sort;
 
-    if (_type != 'all' && tx.type != _type) return false;
+    DateTime? from =
+    current.fromMillis == null ? null : DateTime.fromMillisecondsSinceEpoch(current.fromMillis!).toLocal();
+    DateTime? to =
+    current.toMillis == null ? null : DateTime.fromMillisecondsSinceEpoch(current.toMillis!).toLocal();
 
-    final amount = tx.amountMinor;
-    if (_minMinor != null && amount < _minMinor!) return false;
-    if (_maxMinor != null && amount > _maxMinor!) return false;
+    final minCtrl = TextEditingController(
+      text: current.minMinor == null ? '' : minorToRupees(current.minMinor!),
+    );
+    final maxCtrl = TextEditingController(
+      text: current.maxMinor == null ? '' : minorToRupees(current.maxMinor!),
+    );
+    final searchCtrl = TextEditingController(text: current.search);
 
-    // Filter by category/subcategory (tx stores ONLY subcategoryId)
-    if (_pickedNodeId != null && _pickedNodeId!.isNotEmpty) {
-      final picked = _pickedNodeId!;
-      final subId = tx.subcategoryId; // nullable for income
+    String? categoryId = current.categoryId;
+    String? subcategoryId = current.subcategoryId;
 
-      // picked a subcategory -> exact match
-      if (picked.startsWith('sub_')) {
-        if (subId == null || subId != picked) return false;
-      }
+    // Load categories/subcategories
+    final cats = await catRepo.getCategories();
+    List<CategoryNode> subs = [];
 
-      // picked a category -> match by subcategory parentId
-      if (picked.startsWith('cat_')) {
-        if (subId == null) return false;
-        final parent = _subToParent[subId];
-        if (parent != picked) return false;
-      }
-    }
+    CategoryNode? selectedCat = categoryId == null ? null : cats.firstWhereOrNull((x) => x.id == categoryId);
+    if (selectedCat != null) subs = await catRepo.getSubcategories(selectedCat.id);
 
-    if (_q.isNotEmpty) {
-      final note = (tx.note ?? '').toLowerCase();
-      final amountText = amount.toString();
-      if (!note.contains(_q) && !amountText.contains(_q) && !tx.type.contains(_q)) {
-        return false;
-      }
-    }
+    CategoryNode? selectedSub = subcategoryId == null ? null : subs.firstWhereOrNull((x) => x.id == subcategoryId);
 
-    return true;
-  }
-
-  Future<void> _openFiltersSheet() async {
-    final minCtrl = TextEditingController(text: _minMinor == null ? '' : minorToRupees(_minMinor!));
-    final maxCtrl = TextEditingController(text: _maxMinor == null ? '' : minorToRupees(_maxMinor!));
+    if (!mounted) return;
 
     await showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
+      context: root,
       isScrollControlled: true,
-      builder: (ctx) {
-        String localType = _type;
-        String? localPicked = _pickedNodeId;
+      builder: (sheetCtx) {
+        String? moneyError; // show validation inside the sheet
 
-        final cats = _idToNode.values.where((n) => n.type == 'category').toList()
-          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-        final subs = _idToNode.values.where((n) => n.type == 'subcategory').toList()
-          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+        int? _safeMoneyToMinor(String raw, {required String label}) {
+          final t = raw.trim();
+          if (t.isEmpty) return null;
+
+          // basic sanitization: allow "30,000"
+          final cleaned = t.replaceAll(',', '');
+
+          try {
+            return rupeesToMinor(cleaned);
+          } catch (_) {
+            moneyError = '$label is invalid';
+            return null;
+          }
+        }
+
+        String _fmtDate(DateTime d) => d.toString().substring(0, 10);
 
         return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+          builder: (ctx, setSheet) {
+            Future<void> pickRange() async {
+              final initial = DateTime.now();
+              final picked = await showDateRangePicker(
+                context: ctx,
+                firstDate: DateTime(2020),
+                lastDate: DateTime(initial.year + 1),
+                initialDateRange: (from != null && to != null) ? DateTimeRange(start: from!, end: to!) : null,
+              );
+              if (picked == null) return;
+              setSheet(() {
+                from = picked.start;
+                to = picked.end;
+              });
+            }
+
+            Future<void> pickCategory() async {
+              final picked = await showModalBottomSheet<CategoryNode>(
+                context: ctx,
+                isScrollControlled: true,
+                builder: (_) => _SearchPickerBottomSheet<CategoryNode>(
+                  title: 'Select Category',
+                  items: cats,
+                  itemLabel: (c) => c.name,
+                ),
+              );
+              if (picked == null) return;
+
+              final newSubs = await catRepo.getSubcategories(picked.id);
+              setSheet(() {
+                selectedCat = picked;
+                categoryId = picked.id;
+
+                subs = newSubs;
+                selectedSub = null;
+                subcategoryId = null;
+              });
+            }
+
+            Future<void> pickSubcategory() async {
+              if (selectedCat == null) return;
+
+              final picked = await showModalBottomSheet<CategoryNode>(
+                context: ctx,
+                isScrollControlled: true,
+                builder: (_) => _SearchPickerBottomSheet<CategoryNode>(
+                  title: 'Select Subcategory',
+                  items: subs,
+                  itemLabel: (s) => s.name,
+                ),
+              );
+              if (picked == null) return;
+
+              setSheet(() {
+                selectedSub = picked;
+                subcategoryId = picked.id;
+              });
+            }
+
+            Future<void> apply() async {
+              setSheet(() => moneyError = null);
+
+              // ✅ Safe parsing (no crash)
+              final minMinor = _safeMoneyToMinor(minCtrl.text, label: 'Min amount');
+              final maxMinor = _safeMoneyToMinor(maxCtrl.text, label: 'Max amount');
+
+              // if parsing failed, show message and stay open
+              if (moneyError != null) {
+                setSheet(() {});
+                return;
+              }
+
+              // ✅ min <= max validation
+              if (minMinor != null && maxMinor != null && minMinor > maxMinor) {
+                setSheet(() => moneyError = 'Min amount can’t be greater than Max amount');
+                return;
+              }
+
+              // If user selected category but not subcategory -> filter by all subs of that category
+              List<String>? catSubIds;
+              if (subcategoryId == null && categoryId != null) {
+                final list = await catRepo.getSubcategories(categoryId!);
+                catSubIds = list.map((e) => e.id).toList();
+              }
+
+              final f = TxFilters(
+                type: type,
+                sort: sort,
+                search: searchCtrl.text.trim(),
+                categoryId: categoryId,
+                subcategoryId: subcategoryId,
+                categorySubcategoryIds: catSubIds,
+                fromMillis: from == null
+                    ? null
+                    : DateTime(from!.year, from!.month, from!.day, 0, 0).millisecondsSinceEpoch,
+                toMillis: to == null
+                    ? null
+                    : DateTime(to!.year, to!.month, to!.day, 23, 59, 59).millisecondsSinceEpoch,
+                minMinor: minMinor,
+                maxMinor: maxMinor,
+              );
+
+              root.read<TransactionBloc>().add(
+                ApplyTxFiltersRequested(monthId: monthId, filters: f),
+              );
+              Navigator.pop(ctx);
+            }
+
+            void clear() {
+              root.read<TransactionBloc>().add(
+                ClearTxFiltersRequested(monthId: monthId),
+              );
+              Navigator.pop(ctx);
+            }
+
+            final pad = MediaQuery.of(ctx).viewInsets.bottom;
 
             return Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + bottom),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('Filters', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                  const SizedBox(height: 10),
-
-                  DropdownButtonFormField<String>(
-                    value: localType,
-                    items: const [
-                      DropdownMenuItem(value: 'all', child: Text('All')),
-                      DropdownMenuItem(value: 'expense', child: Text('Expense')),
-                      DropdownMenuItem(value: 'income', child: Text('Income')),
-                    ],
-                    onChanged: (v) => setLocal(() => localType = v ?? 'all'),
-                    decoration: const InputDecoration(labelText: 'Type'),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  if (_loadingNodes)
-                    const Align(alignment: Alignment.centerLeft, child: Text('Loading categories...'))
-                  else
-                    DropdownButtonFormField<String?>(
-                      value: localPicked,
-                      items: [
-                        const DropdownMenuItem<String?>(value: null, child: Text('All categories')),
-                        ...cats.map((c) => DropdownMenuItem<String?>(
-                          value: c.id,
-                          child: Text('${c.name} (All)'),
-                        )),
-                        ...subs.map((s) {
-                          final parentName = s.parentId == null ? '' : (_idToNode[s.parentId!]?.name ?? '');
-                          return DropdownMenuItem<String?>(
-                            value: s.id,
-                            child: Text('$parentName > ${s.name}'),
-                          );
-                        }),
-                      ],
-                      onChanged: (v) => setLocal(() => localPicked = v),
-                      decoration: const InputDecoration(labelText: 'Category/Subcategory'),
-                    ),
-
-                  const SizedBox(height: 10),
-
-                  TextField(
-                    controller: minCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Min amount (PKR)'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: maxCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Max amount (PKR)'),
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  Row(
+              padding: EdgeInsets.only(bottom: pad),
+              child: SafeArea(
+                child: SizedBox(
+                  height: 660,
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {
-                            setState(() {
-                              _type = 'all';
-                              _pickedNodeId = null;
-                              _minMinor = null;
-                              _maxMinor = null;
-                            });
-                            Navigator.pop(ctx);
-                          },
-                          child: const Text('Reset'),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text('Filters', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                            ),
+                            TextButton(onPressed: clear, child: const Text('Clear')),
+                            const SizedBox(width: 8),
+                            ElevatedButton(onPressed: apply, child: const Text('Apply')),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            int? parsedMin;
-                            int? parsedMax;
 
-                            if (minCtrl.text.trim().isNotEmpty) {
-                              parsedMin = rupeesToMinor(minCtrl.text.trim());
-                            }
-                            if (maxCtrl.text.trim().isNotEmpty) {
-                              parsedMax = rupeesToMinor(maxCtrl.text.trim());
-                            }
+                      if (moneyError != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              moneyError!,
+                              style: TextStyle(color: Theme.of(ctx).colorScheme.error, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ),
 
-                            setState(() {
-                              _type = localType;
-                              _pickedNodeId = localPicked;
-                              _minMinor = parsedMin;
-                              _maxMinor = parsedMax;
-                            });
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: TextField(
+                          controller: searchCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Search note',
+                            prefixIcon: Icon(Icons.search),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
 
-                            Navigator.pop(ctx);
-                          },
-                          child: const Text('Apply'),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: SegmentedButton<TxTypeFilter>(
+                          segments: const [
+                            ButtonSegment(value: TxTypeFilter.all, label: Text('All')),
+                            ButtonSegment(value: TxTypeFilter.expense, label: Text('Expense')),
+                            ButtonSegment(value: TxTypeFilter.income, label: Text('Income')),
+                          ],
+                          selected: {type},
+                          onSelectionChanged: (s) => setSheet(() => type = s.first),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      ListTile(
+                        title: const Text('Date range'),
+                        subtitle: Text(from == null || to == null ? 'Any' : '${_fmtDate(from!)} → ${_fmtDate(to!)}'),
+                        trailing: const Icon(Icons.date_range_outlined),
+                        onTap: pickRange,
+                      ),
+
+                      ListTile(
+                        title: const Text('Category'),
+                        subtitle: Text(selectedCat?.name ?? 'Any'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: pickCategory,
+                      ),
+
+                      ListTile(
+                        title: const Text('Subcategory'),
+                        subtitle: Text(selectedSub?.name ?? (selectedCat == null ? 'Select category first' : 'Any')),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: selectedCat == null ? null : pickSubcategory,
+                      ),
+
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: minCtrl,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                decoration: const InputDecoration(labelText: 'Min PKR'),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextField(
+                                controller: maxCtrl,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                decoration: const InputDecoration(labelText: 'Max PKR'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: DropdownButtonFormField<TxSort>(
+                          value: sort,
+                          decoration: const InputDecoration(labelText: 'Sort'),
+                          items: const [
+                            DropdownMenuItem(value: TxSort.newest, child: Text('Newest')),
+                            DropdownMenuItem(value: TxSort.oldest, child: Text('Oldest')),
+                            DropdownMenuItem(value: TxSort.amountHigh, child: Text('Amount high → low')),
+                            DropdownMenuItem(value: TxSort.amountLow, child: Text('Amount low → high')),
+                          ],
+                          onChanged: (v) => setSheet(() => sort = v ?? TxSort.newest),
                         ),
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
             );
           },
@@ -284,186 +340,230 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
     );
   }
 
-  void _deleteWithUndo({
-    required String id,
-    required String monthId,
-  }) {
-    setState(() => _pendingDeleteIds.add(id));
-    _deleteTimers[id]?.cancel();
-
-    final timer = Timer(const Duration(seconds: 4), () {
-      if (!mounted) return;
-      if (_pendingDeleteIds.contains(id)) {
-        context.read<TransactionBloc>().add(DeleteTransactionRequested(id: id, monthId: monthId));
-        setState(() => _pendingDeleteIds.remove(id));
-      }
-      _deleteTimers.remove(id);
-    });
-
-    _deleteTimers[id] = timer;
-
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        duration: const Duration(seconds: 4),
-        content: const Text('Transaction deleted'),
-        action: SnackBarAction(
-          label: 'UNDO',
-          onPressed: () {
-            _deleteTimers[id]?.cancel();
-            _deleteTimers.remove(id);
-            setState(() => _pendingDeleteIds.remove(id));
-          },
-        ),
-      ),
-    );
-  }
-
-  String _activeFiltersText() {
-    final parts = <String>[];
-    if (_type != 'all') parts.add(_type);
-    if (_pickedNodeId != null) parts.add(_pickedNodeId!.startsWith('cat_') ? 'category' : 'subcategory');
-    if (_minMinor != null) parts.add('min');
-    if (_maxMinor != null) parts.add('max');
-    if (_q.isNotEmpty) parts.add('search');
-    return parts.isEmpty ? 'No filters' : 'Filters: ${parts.join(', ')}';
-  }
-
   @override
   Widget build(BuildContext context) {
-    return BlocListener<MonthCubit, String>(
-      listener: (context, newMonthId) {
-        if (_lastMonthId == newMonthId) return;
-        _lastMonthId = newMonthId;
+    final monthId = context.watch<MonthCubit>().state;
 
-        _clearPendingDeletes();
-        context.read<TransactionBloc>().add(LoadMonthTransactions(newMonthId));
-      },
-      child: Builder(
-        builder: (context) {
-          final monthId = context.watch<MonthCubit>().state;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Transactions (${MonthCubit.display(monthId)})'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_month_outlined),
+            onPressed: () async {
+              final picked = await showMonthPickerSheet(context, MonthCubit.toDate(monthId));
+              if (picked != null && context.mounted) {
+                context.read<MonthCubit>().setFromDate(picked);
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.filter_alt_outlined),
+            onPressed: () => _openFilters(context),
+          ),
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => AddTransactionScreen(monthId: monthId)),
+              );
+              if (!context.mounted) return;
+              context.read<TransactionBloc>().add(LoadMonthTransactions(monthId));
+            },
+          ),
+        ],
+      ),
+      body: BlocBuilder<TransactionBloc, TransactionState>(
+        builder: (context, state) {
+          if (state.status == TxStatus.loading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (state.status == TxStatus.failure) {
+            return Center(child: Text('Error: ${state.error}'));
+          }
 
-          return Scaffold(
-            appBar: AppBar(
-              title: Text('Transactions (${MonthCubit.display(monthId)})'),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.calendar_month_outlined),
-                  onPressed: () async {
-                    final picked = await showMonthPickerSheet(context, MonthCubit.toDate(monthId));
-                    if (picked != null && context.mounted) {
-                      context.read<MonthCubit>().setFromDate(picked);
-                    }
-                  },
-                ),
-                IconButton(icon: const Icon(Icons.tune_outlined), onPressed: _openFiltersSheet),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: () async {
+          final items = state.items;
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: items.length + 1,
+            itemBuilder: (context, i) {
+              if (i == 0) {
+                return _summaryCard(state);
+              }
+
+              final t = items[i - 1];
+              final isExpense = t.type == 'expense';
+              final amount = minorToRupees(t.amountMinor);
+              final date = DateTime.fromMillisecondsSinceEpoch(t.dateMillis).toLocal();
+
+              return Card(
+                child: ListTile(
+                  title: Text('${isExpense ? "Expense" : "Income"}  $amount'),
+                  subtitle: Text('${date.toString().substring(0, 16)}  |  ${t.note ?? ""}'),
+                  onTap: () async {
                     await Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => AddTransactionScreen(monthId: monthId)),
+                      MaterialPageRoute(builder: (_) => AddTransactionScreen(monthId: monthId, existing: t)),
                     );
                     if (!context.mounted) return;
                     context.read<TransactionBloc>().add(LoadMonthTransactions(monthId));
                   },
-                ),
-
-                /// ✅ EXPORT (fixed)
-                IconButton(
-                  icon: const Icon(Icons.download_outlined),
-                  onPressed: () {
-                    context.read<ExportBloc>().add(
-                      ExportFilteredRequested(
-                        monthId: monthId,
-                        query: _q.isEmpty ? null : _q,
-                        type: _type == 'all' ? null : _type,
-                        subcategoryId: _pickedNodeId,
-                        minMinor: _minMinor,
-                        maxMinor: _maxMinor,
-                      ),
-                    );
-                  },
-                ),
-
-              ],
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(84),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: Column(
-                    children: [
-                      TextField(
-                        controller: _searchCtrl,
-                        decoration: InputDecoration(
-                          hintText: 'Search note / type / amount',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _q.isEmpty
-                              ? null
-                              : IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              FocusScope.of(context).unfocus();
-                            },
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(_activeFiltersText(), style: Theme.of(context).textTheme.bodySmall),
-                      ),
-                    ],
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete),
+                    onPressed: () {
+                      context.read<TransactionBloc>().add(
+                        DeleteTransactionRequested(id: t.id, monthId: monthId),
+                      );
+                    },
                   ),
                 ),
-              ),
-            ),
-            body: BlocBuilder<TransactionBloc, TransactionState>(
-              builder: (context, state) {
-                if (state.status == TxStatus.loading) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (state.status == TxStatus.failure) {
-                  return Center(child: Text('Error: ${state.error}'));
-                }
-
-                final items = state.items.where(_matches).toList();
-
-                if (items.isEmpty) {
-                  return const Center(child: Text('No transactions found.'));
-                }
-
-                return ListView.separated(
-                  itemCount: items.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (_, i) {
-                    final t = items[i];
-                    final isExpense = t.type == 'expense';
-                    final amount = minorToRupees(t.amountMinor);
-                    final date = DateTime.fromMillisecondsSinceEpoch(t.dateMillis).toLocal();
-
-                    final subName = t.subcategoryId == null ? null : _idToNode[t.subcategoryId!]?.name;
-
-                    return ListTile(
-                      title: Text('${isExpense ? "Expense" : "Income"}  $amount'),
-                      subtitle: Text(
-                        '${date.toString().substring(0, 16)}'
-                            '  |  ${subName ?? (t.subcategoryId ?? "")}'
-                            '  |  ${t.note ?? ""}',
-                      ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete),
-                        onPressed: () => _deleteWithUndo(id: t.id, monthId: monthId),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
+              );
+            },
           );
         },
       ),
     );
   }
+
+  Widget _summaryCard(TransactionState s) {
+    final exp = minorToRupees(s.totalExpenseMinor);
+    final inc = minorToRupees(s.totalIncomeMinor);
+    final net = minorToRupees(s.netMinor);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Summary', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text('Expense: $exp'),
+            Text('Income: $inc'),
+            Text('Net: $net'),
+            const SizedBox(height: 10),
+            if (s.filters.hasAny)
+              Text(
+                'Filters active',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              )
+            else
+              const Text('No filters'),
+          ],
+        ),
+      ),
+    );
+  }
 }
+
+class _SearchPickerBottomSheet<T> extends StatefulWidget {
+  const _SearchPickerBottomSheet({
+    required this.title,
+    required this.items,
+    required this.itemLabel,
+  });
+
+  final String title;
+  final List<T> items;
+  final String Function(T) itemLabel;
+
+  @override
+  State<_SearchPickerBottomSheet<T>> createState() => _SearchPickerBottomSheetState<T>();
+}
+
+class _SearchPickerBottomSheetState<T> extends State<_SearchPickerBottomSheet<T>> {
+  final searchCtrl = TextEditingController();
+  late List<T> filtered;
+
+  @override
+  void initState() {
+    super.initState();
+    filtered = widget.items;
+    searchCtrl.addListener(_apply);
+  }
+
+  void _apply() {
+    final q = searchCtrl.text.trim().toLowerCase();
+    setState(() {
+      filtered = q.isEmpty
+          ? widget.items
+          : widget.items.where((x) => widget.itemLabel(x).toLowerCase().contains(q)).toList();
+    });
+  }
+
+  @override
+  void dispose() {
+    searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottom),
+      child: SafeArea(
+        child: SizedBox(
+          height: 520,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(widget.title, style: const TextStyle(fontWeight: FontWeight.bold))),
+                    IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TextField(
+                  controller: searchCtrl,
+                  decoration: const InputDecoration(
+                    hintText: 'Search...',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: filtered.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, i) {
+                    final item = filtered[i];
+                    return ListTile(
+                      title: Text(widget.itemLabel(item)),
+                      onTap: () => Navigator.pop(context, item),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+extension _FirstOrNull<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
+}
+
+extension FirstWhereOrNullExt<T> on Iterable<T> {
+  T? firstWhereOrNull(bool Function(T) test) {
+    for (final x in this) {
+      if (test(x)) return x;
+    }
+    return null;
+  }
+}
+

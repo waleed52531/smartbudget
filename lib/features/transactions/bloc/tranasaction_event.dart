@@ -1,5 +1,5 @@
-
 import 'package:equatable/equatable.dart';
+import 'tx_filters.dart';
 
 sealed class TransactionEvent extends Equatable {
   const TransactionEvent();
@@ -58,4 +58,50 @@ class DeleteTransactionRequested extends TransactionEvent {
 
   @override
   List<Object?> get props => [id, monthId];
+}
+
+class UpdateTransactionRequested extends TransactionEvent {
+  const UpdateTransactionRequested({
+    required this.id,
+    required this.monthId,
+    required this.type, // 'income'|'expense'
+    required this.amountMinor,
+    required this.dateMillis,
+    required this.subcategoryId, // nullable for income
+    required this.note, // nullable
+  });
+
+  final String id;
+  final String monthId;
+  final String type;
+  final int amountMinor;
+  final int dateMillis;
+  final String? subcategoryId;
+  final String? note;
+
+  @override
+  List<Object?> get props => [id, monthId, type, amountMinor, dateMillis, subcategoryId, note];
+}
+
+/// ✅ FIX: named params (matches your UI calls)
+class ApplyTxFiltersRequested extends TransactionEvent {
+  const ApplyTxFiltersRequested({
+    required this.monthId,
+    required this.filters,
+  });
+
+  final String monthId;
+  final TxFilters filters;
+
+  @override
+  List<Object?> get props => [monthId, filters];
+}
+
+/// ✅ FIX: also named and includes monthId
+class ClearTxFiltersRequested extends TransactionEvent {
+  const ClearTxFiltersRequested({required this.monthId});
+  final String monthId;
+
+  @override
+  List<Object?> get props => [monthId];
 }

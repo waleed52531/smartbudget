@@ -3,6 +3,20 @@ import 'package:drift/drift.dart';
 
 import '../../../core/db/app_db.dart';
 
+class ApplyRecurringSummary {
+  const ApplyRecurringSummary({
+    required this.appliedCount,
+    required this.skippedInvalidCount,
+    required this.skippedTitles,
+  });
+
+  final int appliedCount;
+  final int skippedInvalidCount;
+  final List<String> skippedTitles;
+
+  bool get hasSkips => skippedInvalidCount > 0;
+}
+
 class RecurringRepository {
   RecurringRepository(this.db);
   final AppDatabase db;
@@ -24,20 +38,49 @@ class RecurringRepository {
     return dt.millisecondsSinceEpoch;
   }
 
+  bool _isValidTemplate(String type, String? subcategoryId) {
+    if (type == 'expense') {
+      return subcategoryId != null && subcategoryId.trim().isNotEmpty;
+    }
+    return true; // income can be null
+  }
+
   Future<List<RecurringTemplate>> listTemplates() async {
     return db.select(db.recurringTemplates).get();
   }
 
+  /// HARD RULE:
+  /// - expense MUST have subcategoryId
+  /// - income ignores subcategoryId
   Future<void> upsertTemplate({
     String? id,
     required String title,
     required int amountMinor,
-    required String type, // 'expense'/'income'
-    String? subcategoryId, // ✅ FIX
+    required String type, // 'expense' | 'income'
+    String? subcategoryId,
     String? note,
     required int dayOfMonth,
     bool isActive = true,
   }) async {
+    if (type != 'expense' && type != 'income') {
+      throw ArgumentError('Recurring type must be "expense" or "income".');
+    }
+
+    final fixedTitle = title.trim();
+    if (fixedTitle.isEmpty) {
+      throw ArgumentError('Title is required.');
+    }
+
+    final fixedNote = (note == null || note.trim().isEmpty) ? null : note.trim();
+
+    // block invalid expense templates
+    if (!_isValidTemplate(type, subcategoryId)) {
+      throw ArgumentError('Expense recurring must have a subcategory selected.');
+    }
+
+    // income must never store subcategoryId
+    final fixedSubId = (type == 'income') ? null : subcategoryId;
+
     final now = DateTime.now().millisecondsSinceEpoch;
     final templateId = id ?? _id();
 
@@ -49,13 +92,11 @@ class RecurringRepository {
       await db.into(db.recurringTemplates).insert(
         RecurringTemplatesCompanion.insert(
           id: templateId,
-          title: title,
+          title: fixedTitle,
           amountMinor: amountMinor,
           type: type,
-          subcategoryId: subcategoryId == null
-              ? const Value.absent()
-              : Value(subcategoryId), // ✅ FIX
-          note: note == null ? const Value.absent() : Value(note),
+          subcategoryId: Value(fixedSubId), // can be null
+          note: Value(fixedNote), // can be null
           dayOfMonth: Value(dayOfMonth),
           isActive: Value(isActive),
           createdAtMillis: now,
@@ -66,11 +107,11 @@ class RecurringRepository {
         ..where((t) => t.id.equals(templateId)))
           .write(
         RecurringTemplatesCompanion(
-          title: Value(title),
+          title: Value(fixedTitle),
           amountMinor: Value(amountMinor),
           type: Value(type),
-          subcategoryId: Value(subcategoryId), // ✅ FIX
-          note: Value(note),
+          subcategoryId: Value(fixedSubId), // clears if income
+          note: Value(fixedNote),
           dayOfMonth: Value(dayOfMonth),
           isActive: Value(isActive),
         ),
@@ -79,23 +120,17 @@ class RecurringRepository {
   }
 
   Future<void> deleteTemplate(String id) async {
-    await (db.delete(db.recurringTemplates)
-      ..where((t) => t.id.equals(id)))
-        .go();
-
-    await (db.delete(db.recurringApplied)
-      ..where((a) => a.templateId.equals(id)))
-        .go();
+    await (db.delete(db.recurringTemplates)..where((t) => t.id.equals(id))).go();
+    await (db.delete(db.recurringApplied)..where((a) => a.templateId.equals(id))).go();
   }
 
   Future<void> toggleActive(String id, bool active) async {
-    await (db.update(db.recurringTemplates)
-      ..where((t) => t.id.equals(id)))
-        .write(
+    await (db.update(db.recurringTemplates)..where((t) => t.id.equals(id))).write(
       RecurringTemplatesCompanion(isActive: Value(active)),
     );
   }
 
+  /// ✅ FIX: ignore invalid templates so "pending" doesn’t stay forever
   Future<int> pendingCount(String monthId) async {
     final active = await (db.select(db.recurringTemplates)
       ..where((t) => t.isActive.equals(true)))
@@ -107,17 +142,24 @@ class RecurringRepository {
         .get();
     final appliedIds = applied.map((e) => e.templateId).toSet();
 
-    return active.where((t) => !appliedIds.contains(t.id)).length;
+    // ✅ ignore invalid templates so pending count is honest
+    final validActive = active.where((t) => _isValidTemplate(t.type, t.subcategoryId));
+
+    return validActive.where((t) => !appliedIds.contains(t.id)).length;
   }
 
-  Future<void> applyToMonth(String monthId) async {
+
+  /// Returns summary so UI can show "applied X, skipped Y invalid"
+  Future<ApplyRecurringSummary> applyToMonth(String monthId) async {
     final now = DateTime.now().millisecondsSinceEpoch;
+
+    var appliedCount = 0;
+    final skippedTitles = <String>[];
 
     await db.transaction(() async {
       final templates = await (db.select(db.recurringTemplates)
         ..where((t) => t.isActive.equals(true)))
           .get();
-
       if (templates.isEmpty) return;
 
       final applied = await (db.select(db.recurringApplied)
@@ -128,22 +170,34 @@ class RecurringRepository {
       for (final t in templates) {
         if (appliedIds.contains(t.id)) continue;
 
-        // ✅ Insert transaction matching YOUR Transactions table
+        // ✅ guard: skip broken expense templates (prevents CHECK constraint crash)
+        if (!_isValidTemplate(t.type, t.subcategoryId)) {
+          skippedTitles.add(t.title);
+          continue;
+        }
+
+        final whenMillis = _dateMillisForMonth(monthId, t.dayOfMonth);
+
         await db.into(db.transactions).insert(
           TransactionsCompanion.insert(
             monthId: monthId,
             amountMinor: t.amountMinor,
             type: t.type,
-            dateMillis: _dateMillisForMonth(monthId, t.dayOfMonth),
+            dateMillis: whenMillis,
+
+            // ✅ MUST satisfy your Transactions CHECK constraint
             subcategoryId: t.type == 'expense'
-                ? Value(t.subcategoryId)   // can be null if you saved wrong, so validate
+                ? Value(t.subcategoryId!) // safe due to guard
                 : const Value(null),
+
             note: Value(t.note ?? '[Recurring] ${t.title}'),
+
+            // optional but recommended: keep update timestamps consistent
+            updatedAt: Value(now),
+            // createdAt: Value(now), // optional; can omit because clientDefault exists
           ),
         );
 
-
-        // mark applied (prevents duplicates)
         await db.into(db.recurringApplied).insert(
           RecurringAppliedCompanion.insert(
             templateId: t.id,
@@ -151,7 +205,16 @@ class RecurringRepository {
             appliedAtMillis: now,
           ),
         );
+
+        appliedCount++;
       }
+
     });
+
+    return ApplyRecurringSummary(
+      appliedCount: appliedCount,
+      skippedInvalidCount: skippedTitles.length,
+      skippedTitles: skippedTitles,
+    );
   }
 }

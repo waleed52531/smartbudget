@@ -519,6 +519,33 @@ class AppDatabase extends _$AppDatabase {
     }).toList();
   }
 
+  // ---------- Subcategories helpers ----------
+  Future<List<CategoryNode>> getSubcategories(String categoryId) {
+    return (select(categoryNodes)
+      ..where((n) =>
+      n.type.equals('subcategory') &
+      n.parentId.equals(categoryId) &
+      n.archived.equals(false))
+      ..orderBy([
+            (n) => OrderingTerm.asc(n.sortOrder),
+            (n) => OrderingTerm.asc(n.name),
+      ]))
+        .get();
+  }
+
+  Future<List<String>> getSubcategoryIdsByCategory(String categoryId) async {
+    final rows = await (selectOnly(categoryNodes)
+      ..addColumns([categoryNodes.id])
+      ..where(categoryNodes.type.equals('subcategory') &
+      categoryNodes.parentId.equals(categoryId) &
+      categoryNodes.archived.equals(false))
+      ..orderBy([OrderingTerm.asc(categoryNodes.sortOrder)]))
+        .get();
+
+    return rows.map((r) => r.read(categoryNodes.id)!).toList();
+  }
+
+
   // ---------- Helper to insert a sample expense (for testing only) ----------
   Future<void> insertExpense({
     required int amountMinor,
