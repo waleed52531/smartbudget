@@ -1,43 +1,25 @@
 import 'package:drift/drift.dart';
 import '../../../core/db/app_db.dart';
+import '../../../core/utils/money.dart';
+import '../../../core/utils/month_id.dart';
 
 class TransactionRepository {
   TransactionRepository(this.db);
   final AppDatabase db;
 
-  DateTime _monthStart(String monthId) {
-    final y = int.parse(monthId.substring(0, 4));
-    final m = int.parse(monthId.substring(5, 7));
-    return DateTime(y, m, 1);
-  }
-
-  int _clampDateMillisToMonth(int dateMillis, String monthId) {
-    final start = _monthStart(monthId);
-    final end = DateTime(start.year, start.month + 1, 0);
-
-    final dt = DateTime.fromMillisecondsSinceEpoch(dateMillis).toLocal();
-    final daysInMonth = end.day;
-    final day = dt.day.clamp(1, daysInMonth);
-
-    // Force the SAME monthId, clamp only the day; keep time
-    final clamped = DateTime(
-      start.year,
-      start.month,
-      day,
-      dt.hour,
-      dt.minute,
-      dt.second,
-      dt.millisecond,
-      dt.microsecond,
-    );
-
-    return clamped.millisecondsSinceEpoch;
+  int _validatedDateMillis(int dateMillis, String monthId) {
+    if (monthIdFromMillis(dateMillis) != monthId) {
+      throw ArgumentError(
+        'Transaction date must belong to the selected month.',
+      );
+    }
+    return dateMillis;
   }
 
   Future<List<Transaction>> listByMonth(String monthId) {
     return (db.select(db.transactions)
-      ..where((t) => t.monthId.equals(monthId))
-      ..orderBy([(t) => OrderingTerm.desc(t.dateMillis)]))
+          ..where((t) => t.monthId.equals(monthId))
+          ..orderBy([(t) => OrderingTerm.desc(t.dateMillis)]))
         .get();
   }
 
@@ -48,19 +30,23 @@ class TransactionRepository {
     required String subcategoryId,
     String? note,
   }) async {
-    final safeDate = _clampDateMillisToMonth(dateMillis, monthId);
+    requirePositiveAmount(amountMinor);
+    await db.validateSubcategory(subcategoryId);
+    final safeDate = _validatedDateMillis(dateMillis, monthId);
 
-    await db.into(db.transactions).insert(
-      TransactionsCompanion.insert(
-        type: 'expense',
-        amountMinor: amountMinor,
-        dateMillis: safeDate,
-        monthId: monthId,
-        subcategoryId: Value(subcategoryId),
-        note: note == null ? const Value.absent() : Value(note),
-        updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
-      ),
-    );
+    await db
+        .into(db.transactions)
+        .insert(
+          TransactionsCompanion.insert(
+            type: 'expense',
+            amountMinor: amountMinor,
+            dateMillis: safeDate,
+            monthId: monthId,
+            subcategoryId: Value(subcategoryId),
+            note: note == null ? const Value.absent() : Value(note),
+            updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+          ),
+        );
   }
 
   Future<void> addIncome({
@@ -69,19 +55,22 @@ class TransactionRepository {
     required int dateMillis,
     String? note,
   }) async {
-    final safeDate = _clampDateMillisToMonth(dateMillis, monthId);
+    requirePositiveAmount(amountMinor);
+    final safeDate = _validatedDateMillis(dateMillis, monthId);
 
-    await db.into(db.transactions).insert(
-      TransactionsCompanion.insert(
-        type: 'income',
-        amountMinor: amountMinor,
-        dateMillis: safeDate,
-        monthId: monthId,
-        subcategoryId: const Value(null),
-        note: note == null ? const Value.absent() : Value(note),
-        updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
-      ),
-    );
+    await db
+        .into(db.transactions)
+        .insert(
+          TransactionsCompanion.insert(
+            type: 'income',
+            amountMinor: amountMinor,
+            dateMillis: safeDate,
+            monthId: monthId,
+            subcategoryId: const Value(null),
+            note: note == null ? const Value.absent() : Value(note),
+            updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+          ),
+        );
   }
 
   Future<void> updateTransaction({
@@ -93,7 +82,17 @@ class TransactionRepository {
     required String? subcategoryId,
     required String? note,
   }) async {
-    final safeDate = _clampDateMillisToMonth(dateMillis, monthId);
+    requirePositiveAmount(amountMinor);
+    if (type != 'expense' && type != 'income') {
+      throw ArgumentError('Invalid transaction type.');
+    }
+    if (type == 'expense') {
+      if (subcategoryId == null) throw ArgumentError('Select a subcategory.');
+      await db.validateSubcategory(subcategoryId);
+    } else if (subcategoryId != null) {
+      throw ArgumentError('Income cannot have an expense subcategory.');
+    }
+    final safeDate = _validatedDateMillis(dateMillis, monthId);
 
     await (db.update(db.transactions)..where((t) => t.id.equals(id))).write(
       TransactionsCompanion(

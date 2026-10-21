@@ -8,8 +8,10 @@ import 'package:smartbudget/core/db/report_models.dart';
 import 'package:uuid/uuid.dart';
 
 import '../utils/month_id.dart';
+import '../utils/money.dart';
 
 part 'app_db.g.dart';
+part 'data_integrity.dart';
 
 final _uuid = Uuid();
 
@@ -22,6 +24,9 @@ LazyDatabase _openConnection() {
 }
 
 /// Tables
+@TableIndex.sql(
+  "CREATE UNIQUE INDEX category_names ON category_nodes(name) WHERE type = 'category'",
+)
 class CategoryNodes extends Table {
   TextColumn get id => text().clientDefault(() => _uuid.v4())();
 
@@ -33,7 +38,7 @@ class CategoryNodes extends Table {
   )();
 
   /// Null for category, required for subcategory
-  TextColumn get parentId => text().nullable()();
+  TextColumn get parentId => text().nullable().references(CategoryNodes, #id)();
 
   BoolColumn get archived => boolean().withDefault(const Constant(false))();
 
@@ -59,6 +64,9 @@ class CategoryNodes extends Table {
     // This also makes subcategory names unique per parent category:
     // (parentId + name) must be unique.
   ];
+
+  @override
+  Set<Column> get primaryKey => {id};
 }
 
 class BudgetMonths extends Table {
@@ -68,9 +76,13 @@ class BudgetMonths extends Table {
   /// Keep simple for now; you can replace with onboarding preference later
   TextColumn get currency => text().withDefault(const Constant('PKR'))();
 
-  IntColumn get totalBudgetMinor => integer().withDefault(const Constant(0))();
+  IntColumn get totalBudgetMinor => integer()
+      .withDefault(const Constant(0))
+      .check(const CustomExpression<bool>('total_budget_minor >= 0'))();
 
-  IntColumn get savingTargetMinor => integer().withDefault(const Constant(0))();
+  IntColumn get savingTargetMinor => integer()
+      .withDefault(const Constant(0))
+      .check(const CustomExpression<bool>('saving_target_minor >= 0'))();
 
   IntColumn get createdAt =>
       integer().clientDefault(() => DateTime.now().millisecondsSinceEpoch)();
@@ -90,12 +102,16 @@ class BudgetLimits extends Table {
   TextColumn get nodeId =>
       text().references(CategoryNodes, #id, onDelete: KeyAction.cascade)();
 
-  IntColumn get limitMinor => integer()();
+  IntColumn get limitMinor =>
+      integer().check(const CustomExpression<bool>('limit_minor >= 0'))();
 
   @override
   List<Set<Column>> get uniqueKeys => [
     {budgetMonthId, nodeId},
   ];
+
+  @override
+  Set<Column> get primaryKey => {id};
 }
 
 class Transactions extends Table {
@@ -106,7 +122,8 @@ class Transactions extends Table {
       text().customConstraint("NOT NULL CHECK(type IN ('income','expense'))")();
 
   /// Money in minor units (paisa/cents)
-  IntColumn get amountMinor => integer()();
+  IntColumn get amountMinor =>
+      integer().check(const CustomExpression<bool>('amount_minor > 0'))();
 
   /// Epoch millis
   IntColumn get dateMillis => integer()();
@@ -135,13 +152,20 @@ class Transactions extends Table {
         "(type = 'income' AND subcategory_id IS NULL)"
         ")",
   ];
+
+  @override
+  Set<Column> get primaryKey => {id};
 }
 
 @DataClassName('RecurringTemplate')
 class RecurringTemplates extends Table {
   TextColumn get id => text()(); // string id (we'll generate in repo)
-  TextColumn get title => text()(); // e.g. Rent
-  IntColumn get amountMinor => integer()(); // PKR minor
+  TextColumn get title => text().check(
+    const CustomExpression<bool>('length(trim(title)) > 0'),
+  )(); // e.g. Rent
+  IntColumn get amountMinor => integer().check(
+    const CustomExpression<bool>('amount_minor > 0'),
+  )(); // PKR minor
   TextColumn get type =>
       text().customConstraint("NOT NULL CHECK(type IN ('income','expense'))")();
 
@@ -152,11 +176,18 @@ class RecurringTemplates extends Table {
   TextColumn get note => text().nullable()();
 
   /// 1..31 (clamp in repo when applying)
-  IntColumn get dayOfMonth => integer().withDefault(const Constant(1))();
+  IntColumn get dayOfMonth => integer()
+      .withDefault(const Constant(1))
+      .check(const CustomExpression<bool>('day_of_month BETWEEN 1 AND 31'))();
 
   BoolColumn get isActive => boolean().withDefault(const Constant(true))();
 
   IntColumn get createdAtMillis => integer()();
+
+  @override
+  List<String> get customConstraints => [
+    "CHECK ((type = 'expense' AND subcategory_id IS NOT NULL) OR (type = 'income' AND subcategory_id IS NULL))",
+  ];
 
   @override
   Set<Column> get primaryKey => {id};
@@ -190,8 +221,11 @@ class RecurringApplied extends Table {
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
+  /// Explicit executors keep tests isolated from the application's database.
+  AppDatabase.withExecutor(super.executor);
+
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -199,13 +233,64 @@ class AppDatabase extends _$AppDatabase {
       await m.createAll();
     },
     onUpgrade: (m, from, to) async {
-      if (from < 2) {
-        await m.createTable(recurringTemplates);
-        await m.createTable(recurringApplied);
+      if (from > to) {
+        throw StateError(
+          'Database downgrade is unsupported. Restore a pre-upgrade backup with the older application.',
+        );
       }
+      await transaction(() async {
+        if (from < 2) {
+          await m.createTable(recurringTemplates);
+          await m.createTable(recurringApplied);
+        }
+        if (from < 3) {
+          // Fail before rebuilding anything. No duplicate or orphan is guessed away.
+          await validateIntegrity();
+          final beforeTotals = await _migrationTotals(this);
+          for (final table in <TableInfo>[
+            categoryNodes,
+            budgetMonths,
+            budgetLimits,
+            transactions,
+            recurringTemplates,
+          ]) {
+            // Drift 2.30.1 marks its table-rebuild migration API experimental.
+            // ignore: experimental_member_use
+            await m.alterTable(TableMigration(table));
+          }
+          await m.createIndex(categoryNames);
+          await validateIntegrity();
+          final violations = await customSelect(
+            'PRAGMA foreign_key_check',
+          ).get();
+          if (violations.isNotEmpty) {
+            throw const DataIntegrityException([
+              'Foreign key validation failed',
+            ]);
+          }
+          if (await _migrationTotals(this) != beforeTotals) {
+            throw const DataIntegrityException(['Migration totals changed']);
+          }
+        }
+        // Commit schema and version together, including if the process stops here.
+        await customStatement('PRAGMA user_version = $to');
+      });
+    },
+    beforeOpen: (_) async {
+      await customStatement('PRAGMA foreign_keys = ON');
     },
   );
 
+  Future<void> validateIntegrity() => _validateStoredData(this);
+
+  Future<void> validateSubcategory(String id) async {
+    final row = await (select(
+      categoryNodes,
+    )..where((n) => n.id.equals(id))).getSingleOrNull();
+    if (row == null || row.type != 'subcategory') {
+      throw ArgumentError('Select an existing subcategory.');
+    }
+  }
 
   /// Seed default categories/subcategories ONLY if database is empty.
   Future<void> seedDefaultsIfEmpty() async {
@@ -404,11 +489,6 @@ class AppDatabase extends _$AppDatabase {
 
   // ---------- BudgetMonth helpers ----------
   Future<void> ensureBudgetMonthExists(String monthId) async {
-    final existing = await (select(
-      budgetMonths,
-    )..where((m) => m.id.equals(monthId))).getSingleOrNull();
-    if (existing != null) return;
-
     await into(budgetMonths).insert(
       BudgetMonthsCompanion.insert(
         id: monthId,
@@ -417,6 +497,7 @@ class AppDatabase extends _$AppDatabase {
         totalBudgetMinor: const Value(0),
         savingTargetMinor: const Value(0),
       ),
+      mode: InsertMode.insertOrIgnore,
     );
   }
 
@@ -522,29 +603,32 @@ class AppDatabase extends _$AppDatabase {
   // ---------- Subcategories helpers ----------
   Future<List<CategoryNode>> getSubcategories(String categoryId) {
     return (select(categoryNodes)
-      ..where((n) =>
-      n.type.equals('subcategory') &
-      n.parentId.equals(categoryId) &
-      n.archived.equals(false))
-      ..orderBy([
+          ..where(
+            (n) =>
+                n.type.equals('subcategory') &
+                n.parentId.equals(categoryId) &
+                n.archived.equals(false),
+          )
+          ..orderBy([
             (n) => OrderingTerm.asc(n.sortOrder),
             (n) => OrderingTerm.asc(n.name),
-      ]))
+          ]))
         .get();
   }
 
   Future<List<String>> getSubcategoryIdsByCategory(String categoryId) async {
-    final rows = await (selectOnly(categoryNodes)
-      ..addColumns([categoryNodes.id])
-      ..where(categoryNodes.type.equals('subcategory') &
-      categoryNodes.parentId.equals(categoryId) &
-      categoryNodes.archived.equals(false))
-      ..orderBy([OrderingTerm.asc(categoryNodes.sortOrder)]))
-        .get();
+    final rows =
+        await (selectOnly(categoryNodes)
+              ..addColumns([categoryNodes.id])
+              ..where(
+                categoryNodes.type.equals('subcategory') &
+                    categoryNodes.parentId.equals(categoryId),
+              )
+              ..orderBy([OrderingTerm.asc(categoryNodes.sortOrder)]))
+            .get();
 
     return rows.map((r) => r.read(categoryNodes.id)!).toList();
   }
-
 
   // ---------- Helper to insert a sample expense (for testing only) ----------
   Future<void> insertExpense({
@@ -553,6 +637,8 @@ class AppDatabase extends _$AppDatabase {
     required String subcategoryId,
     String? note,
   }) async {
+    requirePositiveAmount(amountMinor);
+    await validateSubcategory(subcategoryId);
     final mId = monthIdFromMillis(dateMillis);
 
     await into(transactions).insert(
@@ -573,6 +659,7 @@ class AppDatabase extends _$AppDatabase {
     required int dateMillis,
     String? note,
   }) async {
+    requirePositiveAmount(amountMinor);
     final mId = monthIdFromMillis(dateMillis);
 
     await into(transactions).insert(

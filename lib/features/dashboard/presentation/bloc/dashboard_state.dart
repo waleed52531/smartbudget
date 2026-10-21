@@ -10,19 +10,19 @@ class DashboardState extends Equatable {
     required this.totals,
     required this.categoryCards,
     required this.remainingMinor,
-    required this.savingProgressMinor,
+    required this.netIncomeMinor,
     required this.error,
   });
 
   const DashboardState.initial()
-      : status = DashboardStatus.initial,
-        monthId = '',
-        month = null,
-        totals = null,
-        categoryCards = const [],
-        remainingMinor = 0,
-        savingProgressMinor = 0,
-        error = '';
+    : status = DashboardStatus.initial,
+      monthId = '',
+      month = null,
+      totals = null,
+      categoryCards = const [],
+      remainingMinor = 0,
+      netIncomeMinor = 0,
+      error = '';
 
   final DashboardStatus status;
   final String monthId;
@@ -30,7 +30,7 @@ class DashboardState extends Equatable {
   final MonthTotals? totals;
   final List<CategoryCardRow> categoryCards;
   final int remainingMinor;
-  final int savingProgressMinor;
+  final int netIncomeMinor;
   final String error;
 
   DashboardState copyWith({
@@ -40,7 +40,7 @@ class DashboardState extends Equatable {
     MonthTotals? totals,
     List<CategoryCardRow>? categoryCards,
     int? remainingMinor,
-    int? savingProgressMinor,
+    int? netIncomeMinor,
     String? error,
   }) {
     return DashboardState(
@@ -50,12 +50,20 @@ class DashboardState extends Equatable {
       totals: totals ?? this.totals,
       categoryCards: categoryCards ?? this.categoryCards,
       remainingMinor: remainingMinor ?? this.remainingMinor,
-      savingProgressMinor: savingProgressMinor ?? this.savingProgressMinor,
+      netIncomeMinor: netIncomeMinor ?? this.netIncomeMinor,
       error: error ?? this.error,
     );
   }
 
   @override
-  List<Object?> get props =>
-      [status, monthId, month, totals, categoryCards, remainingMinor, savingProgressMinor, error];
+  List<Object?> get props => [
+    status,
+    monthId,
+    month,
+    totals,
+    categoryCards,
+    remainingMinor,
+    netIncomeMinor,
+    error,
+  ];
 }

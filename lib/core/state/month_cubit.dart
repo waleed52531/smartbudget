@@ -1,7 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 class MonthCubit extends Cubit<String> {
-  MonthCubit(String initialMonthId) : super(initialMonthId);
+  MonthCubit(super.initialState);
 
   void setMonthId(String monthId) => emit(monthId);
 
@@ -19,7 +19,18 @@ class MonthCubit extends Cubit<String> {
 
   static String display(String monthId) {
     const months = [
-      'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     final y = monthId.substring(0, 4);
     final m = int.parse(monthId.substring(5, 7));

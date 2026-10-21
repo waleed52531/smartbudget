@@ -1,5 +1,5 @@
 import 'package:equatable/equatable.dart';
-import '../../../../../core/db/app_db.dart';
+import '../../../../core/db/app_db.dart';
 import '../../data/recurring_repository.dart';
 
 enum RecurringStatus { loading, loaded, failure }
@@ -14,11 +14,11 @@ class RecurringState extends Equatable {
   });
 
   const RecurringState.initial()
-      : status = RecurringStatus.loading,
-        items = const [],
-        error = '',
-        toast = null,
-        lastApplySummary = null;
+    : status = RecurringStatus.loading,
+      items = const [],
+      error = '',
+      toast = null,
+      lastApplySummary = null;
 
   final RecurringStatus status;
   final List<RecurringTemplate> items;
@@ -43,7 +43,9 @@ class RecurringState extends Equatable {
       items: items ?? this.items,
       error: error ?? this.error,
       toast: clearToast ? null : (toast ?? this.toast),
-      lastApplySummary: clearApplySummary ? null : (lastApplySummary ?? this.lastApplySummary),
+      lastApplySummary: clearApplySummary
+          ? null
+          : (lastApplySummary ?? this.lastApplySummary),
     );
   }
 

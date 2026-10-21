@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import '../../../core/db/app_db.dart';
+import '../../../core/utils/money.dart';
 
 /// How to copy previous month values into the target month.
 enum CopyMode {
@@ -18,23 +19,18 @@ class BudgetRepository {
   BudgetRepository(this.db);
   final AppDatabase db;
 
-  Future<BudgetMonth> getOrCreateMonth(String monthId) async {
-    final existing = await (db.select(db.budgetMonths)
-      ..where((m) => m.id.equals(monthId)))
-        .getSingleOrNull();
-
-    if (existing != null) return existing;
-
-    await db.into(db.budgetMonths).insert(
-      BudgetMonthsCompanion.insert(
-        id: monthId,
-        totalBudgetMinor: const Value(0),
-        savingTargetMinor: const Value(0),
-      ),
-    );
-
-    return (db.select(db.budgetMonths)..where((m) => m.id.equals(monthId)))
-        .getSingle();
+  /// Missing months are represented in memory; viewing a month never writes.
+  Future<BudgetMonth> getMonth(String monthId) async {
+    return await (db.select(
+          db.budgetMonths,
+        )..where((m) => m.id.equals(monthId))).getSingleOrNull() ??
+        BudgetMonth(
+          id: monthId,
+          currency: 'PKR',
+          totalBudgetMinor: 0,
+          savingTargetMinor: 0,
+          createdAt: 0,
+        );
   }
 
   Future<void> updateMonthBudget({
@@ -42,7 +38,12 @@ class BudgetRepository {
     required int totalBudgetMinor,
     required int savingTargetMinor,
   }) async {
-    await (db.update(db.budgetMonths)..where((m) => m.id.equals(monthId))).write(
+    requireNonNegativeAmount(totalBudgetMinor);
+    requireNonNegativeAmount(savingTargetMinor);
+    await db.ensureBudgetMonthExists(monthId);
+    await (db.update(
+      db.budgetMonths,
+    )..where((m) => m.id.equals(monthId))).write(
       BudgetMonthsCompanion(
         totalBudgetMinor: Value(totalBudgetMinor),
         savingTargetMinor: Value(savingTargetMinor),
@@ -51,10 +52,12 @@ class BudgetRepository {
   }
 
   Future<int?> getCategoryLimit(String monthId, String categoryId) async {
-    final row = await (db.select(db.budgetLimits)
-      ..where((b) =>
-      b.budgetMonthId.equals(monthId) & b.nodeId.equals(categoryId)))
-        .getSingleOrNull();
+    final row =
+        await (db.select(db.budgetLimits)..where(
+              (b) =>
+                  b.budgetMonthId.equals(monthId) & b.nodeId.equals(categoryId),
+            ))
+            .getSingleOrNull();
     return row?.limitMinor;
   }
 
@@ -64,32 +67,42 @@ class BudgetRepository {
     required String categoryId,
     required int limitMinor,
   }) async {
-    final existing = await (db.select(db.budgetLimits)
-      ..where((b) =>
-      b.budgetMonthId.equals(monthId) & b.nodeId.equals(categoryId)))
-        .getSingleOrNull();
+    requireNonNegativeAmount(limitMinor);
+    final category = await (db.select(
+      db.categoryNodes,
+    )..where((n) => n.id.equals(categoryId))).getSingleOrNull();
+    if (category == null || category.type != 'category') {
+      throw ArgumentError('Select an existing category.');
+    }
+    await db.ensureBudgetMonthExists(monthId);
+    final existing =
+        await (db.select(db.budgetLimits)..where(
+              (b) =>
+                  b.budgetMonthId.equals(monthId) & b.nodeId.equals(categoryId),
+            ))
+            .getSingleOrNull();
 
     if (existing == null) {
-      await db.into(db.budgetLimits).insert(
-        BudgetLimitsCompanion.insert(
-          budgetMonthId: monthId,
-          nodeId: categoryId,
-          limitMinor: limitMinor,
-        ),
-      );
+      await db
+          .into(db.budgetLimits)
+          .insert(
+            BudgetLimitsCompanion.insert(
+              budgetMonthId: monthId,
+              nodeId: categoryId,
+              limitMinor: limitMinor,
+            ),
+          );
     } else {
       await (db.update(db.budgetLimits)..where((b) => b.id.equals(existing.id)))
-          .write(
-        BudgetLimitsCompanion(limitMinor: Value(limitMinor)),
-      );
+          .write(BudgetLimitsCompanion(limitMinor: Value(limitMinor)));
     }
   }
 
   /// Clear limit (remove row)
   Future<void> clearCategoryLimit(String monthId, String categoryId) async {
-    await (db.delete(db.budgetLimits)
-      ..where((b) =>
-      b.budgetMonthId.equals(monthId) & b.nodeId.equals(categoryId)))
+    await (db.delete(db.budgetLimits)..where(
+          (b) => b.budgetMonthId.equals(monthId) & b.nodeId.equals(categoryId),
+        ))
         .go();
   }
 
@@ -102,37 +115,40 @@ class BudgetRepository {
 
     await db.transaction(() async {
       // previous month must exist
-      final prevMonth = await (db.select(db.budgetMonths)
-        ..where((m) => m.id.equals(prevId)))
-          .getSingleOrNull();
+      final prevMonth = await (db.select(
+        db.budgetMonths,
+      )..where((m) => m.id.equals(prevId))).getSingleOrNull();
 
       if (prevMonth == null) {
         throw Exception('No budget found for previous month ($prevId)');
       }
 
-      final prevLimits = await (db.select(db.budgetLimits)
-        ..where((l) => l.budgetMonthId.equals(prevId)))
-          .get();
+      final prevLimits = await (db.select(
+        db.budgetLimits,
+      )..where((l) => l.budgetMonthId.equals(prevId))).get();
 
-      final targetMonth = await (db.select(db.budgetMonths)
-        ..where((m) => m.id.equals(monthId)))
-          .getSingleOrNull();
+      final targetMonth = await (db.select(
+        db.budgetMonths,
+      )..where((m) => m.id.equals(monthId))).getSingleOrNull();
 
       // Ensure target month exists
       if (targetMonth == null) {
-        await db.into(db.budgetMonths).insert(
-          BudgetMonthsCompanion.insert(
-            id: monthId,
-            totalBudgetMinor: Value(prevMonth.totalBudgetMinor),
-            savingTargetMinor: Value(prevMonth.savingTargetMinor),
-          ),
-        );
+        await db
+            .into(db.budgetMonths)
+            .insert(
+              BudgetMonthsCompanion.insert(
+                id: monthId,
+                totalBudgetMinor: Value(prevMonth.totalBudgetMinor),
+                savingTargetMinor: Value(prevMonth.savingTargetMinor),
+              ),
+            );
       }
 
       if (mode == CopyMode.overwriteAll) {
         // overwrite month totals
-        await (db.update(db.budgetMonths)..where((m) => m.id.equals(monthId)))
-            .write(
+        await (db.update(
+          db.budgetMonths,
+        )..where((m) => m.id.equals(monthId))).write(
           BudgetMonthsCompanion(
             totalBudgetMinor: Value(prevMonth.totalBudgetMinor),
             savingTargetMinor: Value(prevMonth.savingTargetMinor),
@@ -140,33 +156,36 @@ class BudgetRepository {
         );
 
         // wipe target limits then copy
-        await (db.delete(db.budgetLimits)
-          ..where((l) => l.budgetMonthId.equals(monthId)))
-            .go();
+        await (db.delete(
+          db.budgetLimits,
+        )..where((l) => l.budgetMonthId.equals(monthId))).go();
 
         for (final l in prevLimits) {
-          await db.into(db.budgetLimits).insert(
-            BudgetLimitsCompanion.insert(
-              budgetMonthId: monthId,
-              nodeId: l.nodeId,
-              limitMinor: l.limitMinor,
-            ),
-          );
+          await db
+              .into(db.budgetLimits)
+              .insert(
+                BudgetLimitsCompanion.insert(
+                  budgetMonthId: monthId,
+                  nodeId: l.nodeId,
+                  limitMinor: l.limitMinor,
+                ),
+              );
         }
         return;
       }
 
       // mergeMissingOnly:
-      final current = await (db.select(db.budgetMonths)
-        ..where((m) => m.id.equals(monthId)))
-          .getSingle();
+      final current = await (db.select(
+        db.budgetMonths,
+      )..where((m) => m.id.equals(monthId))).getSingle();
 
       final fillTotal = current.totalBudgetMinor == 0;
       final fillSaving = current.savingTargetMinor == 0;
 
       if (fillTotal || fillSaving) {
-        await (db.update(db.budgetMonths)..where((m) => m.id.equals(monthId)))
-            .write(
+        await (db.update(
+          db.budgetMonths,
+        )..where((m) => m.id.equals(monthId))).write(
           BudgetMonthsCompanion(
             totalBudgetMinor: Value(
               fillTotal ? prevMonth.totalBudgetMinor : current.totalBudgetMinor,
@@ -181,34 +200,35 @@ class BudgetRepository {
       }
 
       // copy only missing limits
-      final existingTargetLimits = await (db.select(db.budgetLimits)
-        ..where((l) => l.budgetMonthId.equals(monthId)))
-          .get();
+      final existingTargetLimits = await (db.select(
+        db.budgetLimits,
+      )..where((l) => l.budgetMonthId.equals(monthId))).get();
 
       final existingNodeIds = existingTargetLimits.map((e) => e.nodeId).toSet();
 
       for (final l in prevLimits) {
         if (existingNodeIds.contains(l.nodeId)) continue;
 
-        await db.into(db.budgetLimits).insert(
-          BudgetLimitsCompanion.insert(
-            budgetMonthId: monthId,
-            nodeId: l.nodeId,
-            limitMinor: l.limitMinor,
-          ),
-        );
+        await db
+            .into(db.budgetLimits)
+            .insert(
+              BudgetLimitsCompanion.insert(
+                budgetMonthId: monthId,
+                nodeId: l.nodeId,
+                limitMinor: l.limitMinor,
+              ),
+            );
       }
     });
   }
 
   Future<Map<String, int>> getLimitsForMonth(String monthId) async {
-    final rows = await (db.select(db.budgetLimits)
-      ..where((b) => b.budgetMonthId.equals(monthId)))
-        .get();
+    final rows = await (db.select(
+      db.budgetLimits,
+    )..where((b) => b.budgetMonthId.equals(monthId))).get();
 
     return {for (final r in rows) r.nodeId: r.limitMinor};
   }
-
 
   String _previousMonthId(String monthId) {
     final y = int.parse(monthId.substring(0, 4));

@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 enum TxTypeFilter { all, expense, income }
+
 enum TxSort { newest, oldest, amountHigh, amountLow }
 
 class TxFilters extends Equatable {
@@ -41,15 +42,15 @@ class TxFilters extends Equatable {
 
   bool get hasAny =>
       type != TxTypeFilter.all ||
-          sort != TxSort.newest ||
-          search.trim().isNotEmpty ||
-          categoryId != null ||
-          subcategoryId != null ||
-          (categorySubcategoryIds != null && categorySubcategoryIds!.isNotEmpty) ||
-          fromMillis != null ||
-          toMillis != null ||
-          minMinor != null ||
-          maxMinor != null;
+      sort != TxSort.newest ||
+      search.trim().isNotEmpty ||
+      categoryId != null ||
+      subcategoryId != null ||
+      (categorySubcategoryIds != null && categorySubcategoryIds!.isNotEmpty) ||
+      fromMillis != null ||
+      toMillis != null ||
+      minMinor != null ||
+      maxMinor != null;
 
   TxFilters copyWith({
     TxTypeFilter? type,
@@ -72,8 +73,12 @@ class TxFilters extends Equatable {
       sort: sort ?? this.sort,
       search: search ?? this.search,
       categoryId: clearCategory ? null : (categoryId ?? this.categoryId),
-      subcategoryId: clearSubcategory ? null : (subcategoryId ?? this.subcategoryId),
-      categorySubcategoryIds: categorySubcategoryIds ?? this.categorySubcategoryIds,
+      subcategoryId: clearSubcategory
+          ? null
+          : (subcategoryId ?? this.subcategoryId),
+      categorySubcategoryIds: clearCategory
+          ? null
+          : (categorySubcategoryIds ?? this.categorySubcategoryIds),
       fromMillis: clearDates ? null : (fromMillis ?? this.fromMillis),
       toMillis: clearDates ? null : (toMillis ?? this.toMillis),
       minMinor: clearAmountRange ? null : (minMinor ?? this.minMinor),

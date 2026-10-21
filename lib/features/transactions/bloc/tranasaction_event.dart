@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:equatable/equatable.dart';
 import 'tx_filters.dart';
 
@@ -17,6 +19,7 @@ class LoadMonthTransactions extends TransactionEvent {
 
 class AddExpenseRequested extends TransactionEvent {
   const AddExpenseRequested({
+    this.completion,
     required this.monthId,
     required this.amountMinor,
     required this.dateMillis,
@@ -24,6 +27,7 @@ class AddExpenseRequested extends TransactionEvent {
     this.note,
   });
 
+  final Completer<void>? completion;
   final String monthId;
   final int amountMinor;
   final int dateMillis;
@@ -31,17 +35,25 @@ class AddExpenseRequested extends TransactionEvent {
   final String? note;
 
   @override
-  List<Object?> get props => [monthId, amountMinor, dateMillis, subcategoryId, note];
+  List<Object?> get props => [
+    monthId,
+    amountMinor,
+    dateMillis,
+    subcategoryId,
+    note,
+  ];
 }
 
 class AddIncomeRequested extends TransactionEvent {
   const AddIncomeRequested({
+    this.completion,
     required this.monthId,
     required this.amountMinor,
     required this.dateMillis,
     this.note,
   });
 
+  final Completer<void>? completion;
   final String monthId;
   final int amountMinor;
   final int dateMillis;
@@ -63,6 +75,7 @@ class DeleteTransactionRequested extends TransactionEvent {
 class UpdateTransactionRequested extends TransactionEvent {
   const UpdateTransactionRequested({
     required this.id,
+    this.completion,
     required this.monthId,
     required this.type, // 'income'|'expense'
     required this.amountMinor,
@@ -72,6 +85,7 @@ class UpdateTransactionRequested extends TransactionEvent {
   });
 
   final String id;
+  final Completer<void>? completion;
   final String monthId;
   final String type;
   final int amountMinor;
@@ -80,15 +94,20 @@ class UpdateTransactionRequested extends TransactionEvent {
   final String? note;
 
   @override
-  List<Object?> get props => [id, monthId, type, amountMinor, dateMillis, subcategoryId, note];
+  List<Object?> get props => [
+    id,
+    monthId,
+    type,
+    amountMinor,
+    dateMillis,
+    subcategoryId,
+    note,
+  ];
 }
 
 /// ✅ FIX: named params (matches your UI calls)
 class ApplyTxFiltersRequested extends TransactionEvent {
-  const ApplyTxFiltersRequested({
-    required this.monthId,
-    required this.filters,
-  });
+  const ApplyTxFiltersRequested({required this.monthId, required this.filters});
 
   final String monthId;
   final TxFilters filters;

@@ -53,6 +53,9 @@ class $CategoryNodesTable extends CategoryNodes
     true,
     type: DriftSqlType.string,
     requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES category_nodes (id)',
+    ),
   );
   static const VerificationMeta _archivedMeta = const VerificationMeta(
     'archived',
@@ -175,7 +178,7 @@ class $CategoryNodesTable extends CategoryNodes
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => const {};
+  Set<GeneratedColumn> get $primaryKey => {id};
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
     {name, parentId},
@@ -546,6 +549,7 @@ class $BudgetMonthsTable extends BudgetMonths
     'total_budget_minor',
     aliasedName,
     false,
+    check: () => const CustomExpression<bool>('total_budget_minor >= 0'),
     type: DriftSqlType.int,
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
@@ -558,6 +562,7 @@ class $BudgetMonthsTable extends BudgetMonths
     'saving_target_minor',
     aliasedName,
     false,
+    check: () => const CustomExpression<bool>('saving_target_minor >= 0'),
     type: DriftSqlType.int,
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
@@ -929,6 +934,7 @@ class $BudgetLimitsTable extends BudgetLimits
     'limit_minor',
     aliasedName,
     false,
+    check: () => const CustomExpression<bool>('limit_minor >= 0'),
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
@@ -980,7 +986,7 @@ class $BudgetLimitsTable extends BudgetLimits
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => const {};
+  Set<GeneratedColumn> get $primaryKey => {id};
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
     {budgetMonthId, nodeId},
@@ -1239,6 +1245,7 @@ class $TransactionsTable extends Transactions
     'amount_minor',
     aliasedName,
     false,
+    check: () => const CustomExpression<bool>('amount_minor > 0'),
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
@@ -1404,7 +1411,7 @@ class $TransactionsTable extends Transactions
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => const {};
+  Set<GeneratedColumn> get $primaryKey => {id};
   @override
   Transaction map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
@@ -1806,6 +1813,7 @@ class $RecurringTemplatesTable extends RecurringTemplates
     'title',
     aliasedName,
     false,
+    check: () => const CustomExpression<bool>('length(trim(title)) > 0'),
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
@@ -1817,6 +1825,7 @@ class $RecurringTemplatesTable extends RecurringTemplates
     'amount_minor',
     aliasedName,
     false,
+    check: () => const CustomExpression<bool>('amount_minor > 0'),
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
@@ -1861,6 +1870,7 @@ class $RecurringTemplatesTable extends RecurringTemplates
     'day_of_month',
     aliasedName,
     false,
+    check: () => const CustomExpression<bool>('day_of_month BETWEEN 1 AND 31'),
     type: DriftSqlType.int,
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
@@ -2697,6 +2707,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $RecurringAppliedTable recurringApplied = $RecurringAppliedTable(
     this,
   );
+  late final Index categoryNames = Index(
+    'category_names',
+    'CREATE UNIQUE INDEX category_names ON category_nodes (name) WHERE type = \'category\'',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2708,6 +2722,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     transactions,
     recurringTemplates,
     recurringApplied,
+    categoryNames,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -2767,6 +2782,25 @@ final class $$CategoryNodesTableReferences
     super.$_table,
     super.$_typedResult,
   );
+
+  static $CategoryNodesTable _parentIdTable(_$AppDatabase db) =>
+      db.categoryNodes.createAlias(
+        $_aliasNameGenerator(db.categoryNodes.parentId, db.categoryNodes.id),
+      );
+
+  $$CategoryNodesTableProcessedTableManager? get parentId {
+    final $_column = $_itemColumn<String>('parent_id');
+    if ($_column == null) return null;
+    final manager = $$CategoryNodesTableTableManager(
+      $_db,
+      $_db.categoryNodes,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_parentIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
 
   static MultiTypedResultKey<$BudgetLimitsTable, List<BudgetLimit>>
   _budgetLimitsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
@@ -2859,11 +2893,6 @@ class $$CategoryNodesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get parentId => $composableBuilder(
-    column: $table.parentId,
-    builder: (column) => ColumnFilters(column),
-  );
-
   ColumnFilters<bool> get archived => $composableBuilder(
     column: $table.archived,
     builder: (column) => ColumnFilters(column),
@@ -2883,6 +2912,29 @@ class $$CategoryNodesTableFilterComposer
     column: $table.color,
     builder: (column) => ColumnFilters(column),
   );
+
+  $$CategoryNodesTableFilterComposer get parentId {
+    final $$CategoryNodesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.parentId,
+      referencedTable: $db.categoryNodes,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CategoryNodesTableFilterComposer(
+            $db: $db,
+            $table: $db.categoryNodes,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
   Expression<bool> budgetLimitsRefs(
     Expression<bool> Function($$BudgetLimitsTableFilterComposer f) f,
@@ -2984,11 +3036,6 @@ class $$CategoryNodesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get parentId => $composableBuilder(
-    column: $table.parentId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<bool> get archived => $composableBuilder(
     column: $table.archived,
     builder: (column) => ColumnOrderings(column),
@@ -3008,6 +3055,29 @@ class $$CategoryNodesTableOrderingComposer
     column: $table.color,
     builder: (column) => ColumnOrderings(column),
   );
+
+  $$CategoryNodesTableOrderingComposer get parentId {
+    final $$CategoryNodesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.parentId,
+      referencedTable: $db.categoryNodes,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CategoryNodesTableOrderingComposer(
+            $db: $db,
+            $table: $db.categoryNodes,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$CategoryNodesTableAnnotationComposer
@@ -3028,9 +3098,6 @@ class $$CategoryNodesTableAnnotationComposer
   GeneratedColumn<String> get type =>
       $composableBuilder(column: $table.type, builder: (column) => column);
 
-  GeneratedColumn<String> get parentId =>
-      $composableBuilder(column: $table.parentId, builder: (column) => column);
-
   GeneratedColumn<bool> get archived =>
       $composableBuilder(column: $table.archived, builder: (column) => column);
 
@@ -3042,6 +3109,29 @@ class $$CategoryNodesTableAnnotationComposer
 
   GeneratedColumn<int> get color =>
       $composableBuilder(column: $table.color, builder: (column) => column);
+
+  $$CategoryNodesTableAnnotationComposer get parentId {
+    final $$CategoryNodesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.parentId,
+      referencedTable: $db.categoryNodes,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CategoryNodesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.categoryNodes,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
   Expression<T> budgetLimitsRefs<T extends Object>(
     Expression<T> Function($$BudgetLimitsTableAnnotationComposer a) f,
@@ -3134,6 +3224,7 @@ class $$CategoryNodesTableTableManager
           (CategoryNode, $$CategoryNodesTableReferences),
           CategoryNode,
           PrefetchHooks Function({
+            bool parentId,
             bool budgetLimitsRefs,
             bool transactionsRefs,
             bool recurringTemplatesRefs,
@@ -3204,6 +3295,7 @@ class $$CategoryNodesTableTableManager
               .toList(),
           prefetchHooksCallback:
               ({
+                parentId = false,
                 budgetLimitsRefs = false,
                 transactionsRefs = false,
                 recurringTemplatesRefs = false,
@@ -3215,7 +3307,40 @@ class $$CategoryNodesTableTableManager
                     if (transactionsRefs) db.transactions,
                     if (recurringTemplatesRefs) db.recurringTemplates,
                   ],
-                  addJoins: null,
+                  addJoins:
+                      <
+                        T extends TableManagerState<
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic
+                        >
+                      >(state) {
+                        if (parentId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.parentId,
+                                    referencedTable:
+                                        $$CategoryNodesTableReferences
+                                            ._parentIdTable(db),
+                                    referencedColumn:
+                                        $$CategoryNodesTableReferences
+                                            ._parentIdTable(db)
+                                            .id,
+                                  )
+                                  as T;
+                        }
+
+                        return state;
+                      },
                   getPrefetchedDataCallback: (items) async {
                     return [
                       if (budgetLimitsRefs)
@@ -3302,6 +3427,7 @@ typedef $$CategoryNodesTableProcessedTableManager =
       (CategoryNode, $$CategoryNodesTableReferences),
       CategoryNode,
       PrefetchHooks Function({
+        bool parentId,
         bool budgetLimitsRefs,
         bool transactionsRefs,
         bool recurringTemplatesRefs,

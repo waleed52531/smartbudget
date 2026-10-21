@@ -12,13 +12,13 @@ class BackupState extends Equatable {
   });
 
   const BackupState.initial()
-      : status = BackupStatus.idle,
-        file = null,
-        error = '',
-        toast = null;
+    : status = BackupStatus.idle,
+      file = null,
+      error = '',
+      toast = null;
 
   final BackupStatus status;
-  final File? file;     // exported file
+  final File? file; // exported file
   final String error;
   final String? toast;
 
@@ -27,10 +27,11 @@ class BackupState extends Equatable {
     File? file,
     String? error,
     String? toast,
+    bool clearFile = false,
   }) {
     return BackupState(
       status: status ?? this.status,
-      file: file ?? this.file,
+      file: clearFile ? null : (file ?? this.file),
       error: error ?? this.error,
       toast: toast,
     );

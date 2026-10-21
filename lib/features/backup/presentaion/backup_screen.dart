@@ -27,25 +27,28 @@ class BackupScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Backup & Restore'),
-        actions: [IconButton(
-          icon: const Icon(Icons.settings_backup_restore_outlined),
-          onPressed: () {
-            Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const BackupScreen()));
-          },
-        ),
-        ],),
+      appBar: AppBar(title: const Text('Backup & Restore')),
       body: BlocListener<BackupBloc, BackupState>(
+        listenWhen: (previous, current) =>
+            previous.status != current.status ||
+            previous.file != current.file ||
+            current.toast != null,
         listener: (context, s) async {
           if (s.toast != null) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.toast!)));
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(s.toast!)));
             context.read<BackupBloc>().add(const ClearBackupToast());
           }
 
           if (s.status == BackupStatus.success && s.file != null) {
             // Share exported file automatically
-            await Share.shareXFiles([XFile(s.file!.path)], text: 'Monthly Budget Backup');
+            await SharePlus.instance.share(
+              ShareParams(
+                files: [XFile(s.file!.path)],
+                text: 'Monthly Budget Backup',
+              ),
+            );
           }
         },
         child: BlocBuilder<BackupBloc, BackupState>(
@@ -62,14 +65,23 @@ class BackupScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Export Backup', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text(
+                            'Export Backup',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           const SizedBox(height: 8),
-                          const Text('Creates a JSON file with your data (transactions, budgets, categories, recurring).'),
+                          const Text(
+                            'Creates a JSON file with your data (transactions, budgets, categories, recurring).',
+                          ),
                           const SizedBox(height: 12),
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton.icon(
-                              onPressed: loading ? null : () => context.read<BackupBloc>().add(const ExportBackupRequested()),
+                              onPressed: loading
+                                  ? null
+                                  : () => context.read<BackupBloc>().add(
+                                      const ExportBackupRequested(),
+                                    ),
                               icon: const Icon(Icons.download_outlined),
                               label: const Text('Export & Share'),
                             ),
@@ -85,9 +97,14 @@ class BackupScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Restore Backup', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text(
+                            'Restore Backup',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           const SizedBox(height: 8),
-                          const Text('Merge = keep current + add/replace matching IDs.\nOverwrite = delete everything then restore.'),
+                          const Text(
+                            'Merge adds missing records and keeps identical records. Conflicts require review.\nOverwrite replaces data after validating the complete backup.',
+                          ),
                           const SizedBox(height: 12),
                           SizedBox(
                             width: double.infinity,
@@ -95,44 +112,64 @@ class BackupScreen extends StatelessWidget {
                               onPressed: loading
                                   ? null
                                   : () async {
-                                final file = await _pickJsonFile();
-                                if (file == null) return;
+                                      final file = await _pickJsonFile();
+                                      if (file == null || !context.mounted) {
+                                        return;
+                                      }
 
-                                final mode = await showDialog<RestoreMode>(
-                                  context: context,
-                                  builder: (_) => AlertDialog(
-                                    title: const Text('Restore mode'),
-                                    content: const Text(
-                                      'Merge: safer (does not delete).\n'
-                                          'Overwrite: wipes DB then restores (danger).',
-                                    ),
-                                    actions: [
-                                      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(context, RestoreMode.merge),
-                                        child: const Text('Merge'),
-                                      ),
-                                      ElevatedButton(
-                                        onPressed: () => Navigator.pop(context, RestoreMode.overwrite),
-                                        child: const Text('Overwrite'),
-                                      ),
-                                    ],
-                                  ),
-                                );
+                                      final mode = await showDialog<RestoreMode>(
+                                        context: context,
+                                        builder: (_) => AlertDialog(
+                                          title: const Text('Restore mode'),
+                                          content: const Text(
+                                            'Merge: keeps existing data; conflicting records stop the restore.\n'
+                                            'Overwrite: wipes DB then restores (danger).',
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context),
+                                              child: const Text('Cancel'),
+                                            ),
+                                            TextButton(
+                                              onPressed: () => Navigator.pop(
+                                                context,
+                                                RestoreMode.merge,
+                                              ),
+                                              child: const Text('Merge'),
+                                            ),
+                                            ElevatedButton(
+                                              onPressed: () => Navigator.pop(
+                                                context,
+                                                RestoreMode.overwrite,
+                                              ),
+                                              child: const Text('Overwrite'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
 
-                                if (mode == null) return;
+                                      if (mode == null || !context.mounted) {
+                                        return;
+                                      }
 
-                                context.read<BackupBloc>().add(
-                                  RestoreBackupRequested(file: file, mode: mode),
-                                );
-                              },
+                                      context.read<BackupBloc>().add(
+                                        RestoreBackupRequested(
+                                          file: file,
+                                          mode: mode,
+                                        ),
+                                      );
+                                    },
                               icon: const Icon(Icons.upload_outlined),
                               label: const Text('Pick JSON & Restore'),
                             ),
                           ),
                           if (s.status == BackupStatus.failure) ...[
                             const SizedBox(height: 10),
-                            Text('Error: ${s.error}', style: const TextStyle(color: Colors.red)),
+                            Text(
+                              'Error: ${s.error}',
+                              style: const TextStyle(color: Colors.red),
+                            ),
                           ],
                         ],
                       ),

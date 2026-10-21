@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -8,8 +10,9 @@ import '../features/budget/presentation/bloc/budget_bloc.dart';
 import '../features/budget/presentation/bloc/budget_event.dart';
 import '../features/budget/presentation/budget_screen.dart';
 
-import '../features/recurring/presentation/bloc/recurring_bloc.dart';
-import '../features/recurring/presentation/bloc/recurring_event.dart';
+import 'db/app_db.dart';
+import '../features/reports/presentation/reportsbloc/reports_bloc.dart';
+import '../features/reports/presentation/reportsbloc/reports_event.dart';
 import '../features/reports/presentation/reports_screen.dart';
 
 import '../features/transactions/bloc/tranasaction_bloc.dart';
@@ -27,6 +30,8 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int index = 0;
+  StreamSubscription<Object?>? _databaseUpdates;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
@@ -35,13 +40,19 @@ class _AppShellState extends State<AppShell> {
     // Load initial month once
     final m = context.read<MonthCubit>().state;
     _reloadAll(m);
+    _databaseUpdates = context.read<AppDatabase>().tableUpdates().listen((_) {
+      _refreshTimer?.cancel();
+      _refreshTimer = Timer(const Duration(milliseconds: 20), () {
+        if (mounted) _reloadAll(context.read<MonthCubit>().state);
+      });
+    });
   }
 
   void _reloadAll(String monthId) {
     context.read<DashboardBloc>().add(LoadDashboard(monthId));
     context.read<TransactionBloc>().add(LoadMonthTransactions(monthId));
     context.read<BudgetBloc>().add(LoadBudgetMonth(monthId));
-    // Reports uses FutureBuilder, so no bloc needed here unless you later add one
+    context.read<ReportsBloc>().add(LoadReports(monthId: monthId, force: true));
   }
 
   void _onTap(int i) {
@@ -56,6 +67,13 @@ class _AppShellState extends State<AppShell> {
   }
 
   @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    _databaseUpdates?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final pages = [
       const DashboardScreen(),
@@ -66,12 +84,7 @@ class _AppShellState extends State<AppShell> {
 
     return BlocListener<MonthCubit, String>(
       listener: (context, newMonthId) {
-        context.read<DashboardBloc>().add(LoadDashboard(newMonthId));
-        context.read<TransactionBloc>().add(LoadMonthTransactions(newMonthId));
-        context.read<BudgetBloc>().add(LoadBudgetMonth(newMonthId));
-
-        // ✅ auto-apply recurring on month change
-        context.read<RecurringBloc>().add(ApplyRecurringToMonthRequested(newMonthId));
+        _reloadAll(newMonthId);
       },
       child: Scaffold(
         body: pages[index],
@@ -79,10 +92,22 @@ class _AppShellState extends State<AppShell> {
           selectedIndex: index,
           onDestinationSelected: _onTap,
           destinations: const [
-            NavigationDestination(icon: Icon(Icons.dashboard_outlined), label: 'Dashboard'),
-            NavigationDestination(icon: Icon(Icons.list_alt_outlined), label: 'Transactions'),
-            NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined), label: 'Budget'),
-            NavigationDestination(icon: Icon(Icons.insights_outlined), label: 'Reports'),
+            NavigationDestination(
+              icon: Icon(Icons.dashboard_outlined),
+              label: 'Dashboard',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.list_alt_outlined),
+              label: 'Transactions',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.account_balance_wallet_outlined),
+              label: 'Budget',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.insights_outlined),
+              label: 'Reports',
+            ),
           ],
         ),
       ),

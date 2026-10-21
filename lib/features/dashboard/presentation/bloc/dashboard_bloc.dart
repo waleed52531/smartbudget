@@ -14,28 +14,36 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
   }
 
   final DashboardRepository repo;
+  int _loadGeneration = 0;
 
   Future<void> _onLoad(LoadDashboard e, Emitter<DashboardState> emit) async {
+    final generation = ++_loadGeneration;
     emit(state.copyWith(status: DashboardStatus.loading, monthId: e.monthId));
     try {
-      final month = await repo.getOrCreateMonth(e.monthId);
+      final month = await repo.getMonth(e.monthId);
       final totals = await repo.getMonthTotals(e.monthId);
       final cards = await repo.getCategoryCards(e.monthId);
 
       final remaining = month.totalBudgetMinor - totals.totalSpent;
-      final savingProgress = remaining - month.savingTargetMinor;
+      final netIncome = totals.totalIncome - totals.totalSpent;
 
-      emit(state.copyWith(
-        status: DashboardStatus.loaded,
-        month: month,
-        totals: totals,
-        categoryCards: cards,
-        remainingMinor: remaining,
-        savingProgressMinor: savingProgress,
-        error: '',
-      ));
+      if (generation != _loadGeneration) return;
+      emit(
+        state.copyWith(
+          status: DashboardStatus.loaded,
+          month: month,
+          totals: totals,
+          categoryCards: cards,
+          remainingMinor: remaining,
+          netIncomeMinor: netIncome,
+          error: '',
+        ),
+      );
     } catch (err) {
-      emit(state.copyWith(status: DashboardStatus.failure, error: err.toString()));
+      if (generation != _loadGeneration) return;
+      emit(
+        state.copyWith(status: DashboardStatus.failure, error: err.toString()),
+      );
     }
   }
 }

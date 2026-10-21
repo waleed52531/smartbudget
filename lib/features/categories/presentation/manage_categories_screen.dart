@@ -16,36 +16,39 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
 
   Future<void> _addCategory() async {
     final name = await _nameDialog(title: 'Add Category');
-    if (name == null) return;
+    if (name == null || !mounted) return;
 
     try {
       await context.read<CategoryRepository>().addCategory(name);
-      setState(() {});
+      if (mounted) setState(() {});
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
-
   Future<void> _addSubcategory(String categoryId) async {
     final name = await _nameDialog(title: 'Add Subcategory');
-    if (name == null || name.trim().isEmpty) return;
-    await context.read<CategoryRepository>().addSubcategory(categoryId: categoryId, name: name);
-    setState(() {});
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    await context.read<CategoryRepository>().addSubcategory(
+      categoryId: categoryId,
+      name: name,
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _rename(String id, String currentName) async {
     final name = await _nameDialog(title: 'Rename', initial: currentName);
-    if (name == null || name.trim().isEmpty) return;
+    if (name == null || name.trim().isEmpty || !mounted) return;
     await context.read<CategoryRepository>().renameNode(id, name);
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   Future<void> _archive(String id) async {
     await context.read<CategoryRepository>().archiveNode(id);
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   Future<String?> _nameDialog({required String title, String? initial}) async {
@@ -59,8 +62,14 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
           decoration: const InputDecoration(hintText: 'Name'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, ctrl.text), child: const Text('Save')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, ctrl.text),
+            child: const Text('Save'),
+          ),
         ],
       ),
     );
@@ -109,7 +118,10 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
                 subtitle: c.archived ? const Text('Archived') : null,
                 children: [
                   FutureBuilder<List<CategoryNode>>(
-                    future: repo.getAllSubcategories(c.id, includeArchived: includeArchived),
+                    future: repo.getAllSubcategories(
+                      c.id,
+                      includeArchived: includeArchived,
+                    ),
                     builder: (context, subsSnap) {
                       if (subsSnap.connectionState != ConnectionState.done) {
                         return const Padding(
@@ -123,15 +135,25 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
                           for (final s in subs)
                             ListTile(
                               title: Text('• ${s.name}'),
-                              subtitle: s.archived ? const Text('Archived') : null,
+                              subtitle: s.archived
+                                  ? const Text('Archived')
+                                  : null,
                               trailing: PopupMenuButton<String>(
                                 onSelected: (v) async {
-                                  if (v == 'rename') await _rename(s.id, s.name);
+                                  if (v == 'rename') {
+                                    await _rename(s.id, s.name);
+                                  }
                                   if (v == 'archive') await _archive(s.id);
                                 },
                                 itemBuilder: (_) => const [
-                                  PopupMenuItem(value: 'rename', child: Text('Rename')),
-                                  PopupMenuItem(value: 'archive', child: Text('Archive')),
+                                  PopupMenuItem(
+                                    value: 'rename',
+                                    child: Text('Rename'),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'archive',
+                                    child: Text('Archive'),
+                                  ),
                                 ],
                               ),
                             ),

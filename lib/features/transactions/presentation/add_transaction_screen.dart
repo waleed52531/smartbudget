@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -42,6 +44,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   CategoryNode? selectedSubcategory;
 
   bool loading = true;
+  bool saving = false;
   String? error;
 
   late int dateMillis;
@@ -72,11 +75,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     return dt.millisecondsSinceEpoch;
   }
 
-
   @override
   void initState() {
     super.initState();
-    dateMillis = widget.existing?.dateMillis ?? _defaultDateMillisForMonth(widget.monthId);
+    dateMillis =
+        widget.existing?.dateMillis ??
+        _defaultDateMillisForMonth(widget.monthId);
 
     if (isEdit) {
       isExpense = widget.existing!.type == 'expense';
@@ -90,7 +94,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   Future<void> _loadInitial() async {
     try {
       final catRepo = context.read<CategoryRepository>();
-      categories = await catRepo.getCategories();
+      categories = await catRepo.getAllCategories(includeArchived: isEdit);
 
       // Default selection
       selectedCategory = categories.isNotEmpty ? categories.first : null;
@@ -102,7 +106,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           final found = await _findParentCategoryAndSub(catRepo, subId);
           if (found != null) {
             selectedCategory = found.$1;
-            subcategories = await catRepo.getSubcategories(selectedCategory!.id);
+            subcategories = await catRepo.getAllSubcategories(
+              selectedCategory!.id,
+              includeArchived: isEdit,
+            );
             selectedSubcategory = found.$2;
           }
         }
@@ -110,17 +117,23 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
       // 2) If quick-add prefill
       if (!isEdit && widget.prefillSubcategoryId != null) {
-        final found = await _findParentCategoryAndSub(catRepo, widget.prefillSubcategoryId!);
+        final found = await _findParentCategoryAndSub(
+          catRepo,
+          widget.prefillSubcategoryId!,
+        );
         if (found != null) {
           selectedCategory = found.$1;
-          subcategories = await catRepo.getSubcategories(selectedCategory!.id);
+          subcategories = await catRepo.getAllSubcategories(
+            selectedCategory!.id,
+            includeArchived: isEdit,
+          );
           selectedSubcategory = found.$2;
           isExpense = true;
         }
       }
 
       // 3) Otherwise try restore last used (only for new expense)
-      if (!isEdit && isExpense) {
+      if (!isEdit && isExpense && selectedSubcategory == null) {
         final (lastCatId, lastSubId) = await _lastStore.read();
         if (lastCatId != null) {
           final foundCat = categories.where((c) => c.id == lastCatId).toList();
@@ -128,11 +141,18 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         }
 
         if (selectedCategory != null) {
-          subcategories = await catRepo.getSubcategories(selectedCategory!.id);
-          selectedSubcategory = subcategories.isNotEmpty ? subcategories.first : null;
+          subcategories = await catRepo.getAllSubcategories(
+            selectedCategory!.id,
+            includeArchived: isEdit,
+          );
+          selectedSubcategory = subcategories.isNotEmpty
+              ? subcategories.first
+              : null;
 
           if (lastSubId != null) {
-            final foundSub = subcategories.where((s) => s.id == lastSubId).toList();
+            final foundSub = subcategories
+                .where((s) => s.id == lastSubId)
+                .toList();
             if (foundSub.isNotEmpty) selectedSubcategory = foundSub.first;
           }
         }
@@ -140,12 +160,19 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
       // Load subcategories if not loaded yet and category exists
       if (subcategories.isEmpty && selectedCategory != null) {
-        subcategories = await catRepo.getSubcategories(selectedCategory!.id);
-        selectedSubcategory = subcategories.isNotEmpty ? subcategories.first : null;
+        subcategories = await catRepo.getAllSubcategories(
+          selectedCategory!.id,
+          includeArchived: isEdit,
+        );
+        selectedSubcategory = subcategories.isNotEmpty
+            ? subcategories.first
+            : null;
       }
 
+      if (!mounted) return;
       setState(() => loading = false);
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         loading = false;
         error = e.toString();
@@ -154,11 +181,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   }
 
   Future<(CategoryNode, CategoryNode)?> _findParentCategoryAndSub(
-      CategoryRepository repo,
-      String subId,
-      ) async {
+    CategoryRepository repo,
+    String subId,
+  ) async {
     for (final cat in categories) {
-      final subs = await repo.getSubcategories(cat.id);
+      final subs = await repo.getAllSubcategories(
+        cat.id,
+        includeArchived: isEdit,
+      );
       final match = subs.where((s) => s.id == subId).toList();
       if (match.isNotEmpty) {
         return (cat, match.first);
@@ -172,7 +202,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     setState(() => loading = true);
     try {
       final catRepo = context.read<CategoryRepository>();
-      subcategories = await catRepo.getSubcategories(selectedCategory!.id);
+      subcategories = await catRepo.getAllSubcategories(
+        selectedCategory!.id,
+        includeArchived: isEdit,
+      );
       if (subcategories.isNotEmpty) {
         if (selectedSubcategory == null ||
             !subcategories.any((x) => x.id == selectedSubcategory!.id)) {
@@ -181,8 +214,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       } else {
         selectedSubcategory = null;
       }
+      if (!mounted) return;
       setState(() => loading = false);
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         loading = false;
         error = e.toString();
@@ -226,29 +261,25 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     setState(() => dateMillis = updated.millisecondsSinceEpoch);
   }
 
-
   Future<void> _save() async {
+    if (saving) return;
     try {
       final amountMinor = rupeesToMinor(amountCtrl.text);
-
-      if (isExpense) {
-        if (selectedCategory == null) {
-          _toast('Select a category');
-          return;
-        }
-        if (selectedSubcategory == null) {
-          _toast('Select a subcategory');
-          return;
-        }
+      requirePositiveAmount(amountMinor);
+      if (isExpense &&
+          (selectedCategory == null || selectedSubcategory == null)) {
+        _toast('Select a category and subcategory');
+        return;
       }
-
+      setState(() => saving = true);
+      final completion = Completer<void>();
+      final bloc = context.read<TransactionBloc>();
       final note = noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim();
-
       if (isEdit) {
-        final tx = widget.existing!;
-        context.read<TransactionBloc>().add(
+        bloc.add(
           UpdateTransactionRequested(
-            id: tx.id,
+            completion: completion,
+            id: widget.existing!.id,
             monthId: widget.monthId,
             type: isExpense ? 'expense' : 'income',
             amountMinor: amountMinor,
@@ -257,38 +288,46 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             note: note,
           ),
         );
+      } else if (isExpense) {
+        bloc.add(
+          AddExpenseRequested(
+            completion: completion,
+            monthId: widget.monthId,
+            amountMinor: amountMinor,
+            dateMillis: dateMillis,
+            subcategoryId: selectedSubcategory!.id,
+            note: note,
+          ),
+        );
       } else {
-        if (isExpense) {
-          context.read<TransactionBloc>().add(
-            AddExpenseRequested(
-              monthId: widget.monthId,
-              amountMinor: amountMinor,
-              dateMillis: dateMillis,
-              subcategoryId: selectedSubcategory!.id,
-              note: note,
-            ),
-          );
-
+        bloc.add(
+          AddIncomeRequested(
+            completion: completion,
+            monthId: widget.monthId,
+            amountMinor: amountMinor,
+            dateMillis: dateMillis,
+            note: note,
+          ),
+        );
+      }
+      await completion.future;
+      if (isExpense && !isEdit) {
+        // A preference failure must never turn a successful financial write into a retry.
+        try {
           await _lastStore.write(
             categoryId: selectedCategory!.id,
             subcategoryId: selectedSubcategory!.id,
           );
-        } else {
-          context.read<TransactionBloc>().add(
-            AddIncomeRequested(
-              monthId: widget.monthId,
-              amountMinor: amountMinor,
-              dateMillis: dateMillis,
-              note: note,
-            ),
-          );
+        } catch (_) {
+          /* Selection is only a convenience. */
         }
       }
-
       if (!mounted) return;
       Navigator.pop(context);
     } catch (e) {
-      _toast('Invalid input: $e');
+      if (mounted) _toast('Could not save: $e');
+    } finally {
+      if (mounted) setState(() => saving = false);
     }
   }
 
@@ -302,11 +341,13 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         itemLabel: (c) => c.name,
         onAddRequested: () async {
           final name = await _nameDialog('Add Category');
-          if (name == null) return null;
+          if (name == null || !mounted) return null;
           try {
-            await context.read<CategoryRepository>().addCategory(name);
-            categories = await context.read<CategoryRepository>().getCategories();
-            setState(() {});
+            final repo = context.read<CategoryRepository>();
+            await repo.addCategory(name);
+            final updated = await repo.getCategories();
+            if (!mounted) return null;
+            setState(() => categories = updated);
           } catch (e) {
             _toast(e.toString());
           }
@@ -339,7 +380,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         itemLabel: (s) => s.name,
         onAddRequested: () async {
           final name = await _nameDialog('Add Subcategory');
-          if (name == null) return null;
+          if (name == null || !mounted) return null;
           try {
             await context.read<CategoryRepository>().addSubcategory(
               categoryId: selectedCategory!.id,
@@ -369,8 +410,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           decoration: const InputDecoration(hintText: 'Name'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, ctrl.text), child: const Text('Save')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, ctrl.text),
+            child: const Text('Save'),
+          ),
         ],
       ),
     );
@@ -385,77 +432,81 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    if (error != null) return Scaffold(body: Center(child: Text('Error: $error')));
+    if (loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (error != null) {
+      return Scaffold(body: Center(child: Text('Error: $error')));
+    }
 
     final date = DateTime.fromMillisecondsSinceEpoch(dateMillis).toLocal();
 
     return Scaffold(
-      appBar: AppBar(title: Text(isEdit ? 'Edit Transaction' : 'Add Transaction')),
-      body: Padding(
+      appBar: AppBar(
+        title: Text(isEdit ? 'Edit Transaction' : 'Add Transaction'),
+      ),
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(value: true, label: Text('Expense')),
-                ButtonSegment(value: false, label: Text('Income')),
-              ],
-              selected: {isExpense},
-              onSelectionChanged: isEdit
-                  ? null // don’t allow changing type for edit unless you want chaos
-                  : (s) => setState(() => isExpense = s.first),
-            ),
-            const SizedBox(height: 16),
+        children: [
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: true, label: Text('Expense')),
+              ButtonSegment(value: false, label: Text('Income')),
+            ],
+            selected: {isExpense},
+            onSelectionChanged: isEdit
+                ? null // don’t allow changing type for edit unless you want chaos
+                : (s) => setState(() => isExpense = s.first),
+          ),
+          const SizedBox(height: 16),
 
-            TextField(
-              controller: amountCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Amount (PKR)'),
-            ),
-            const SizedBox(height: 12),
+          TextField(
+            controller: amountCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Amount (PKR)'),
+          ),
+          const SizedBox(height: 12),
 
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Date'),
+            subtitle: Text(date.toString().substring(0, 10)),
+            trailing: const Icon(Icons.calendar_month_outlined),
+            onTap: _pickDate,
+          ),
+
+          if (isExpense) ...[
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Date'),
-              subtitle: Text('${date.toString().substring(0, 10)}'),
-              trailing: const Icon(Icons.calendar_month_outlined),
-              onTap: _pickDate,
+              title: const Text('Category'),
+              subtitle: Text(selectedCategory?.name ?? 'Select category'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _pickCategory,
             ),
-
-            if (isExpense) ...[
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Category'),
-                subtitle: Text(selectedCategory?.name ?? 'Select category'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _pickCategory,
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Subcategory'),
-                subtitle: Text(selectedSubcategory?.name ?? 'Select subcategory'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _pickSubcategory,
-              ),
-              const SizedBox(height: 8),
-            ],
-
-            TextField(
-              controller: noteCtrl,
-              decoration: const InputDecoration(labelText: 'Note (optional)'),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Subcategory'),
+              subtitle: Text(selectedSubcategory?.name ?? 'Select subcategory'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _pickSubcategory,
             ),
-
-            const Spacer(),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _save,
-                child: Text(isEdit ? 'Update' : 'Save'),
-              ),
-            ),
+            const SizedBox(height: 8),
           ],
-        ),
+
+          TextField(
+            controller: noteCtrl,
+            decoration: const InputDecoration(labelText: 'Note (optional)'),
+          ),
+
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: saving ? null : _save,
+              child: Text(isEdit ? 'Update' : 'Save'),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -475,10 +526,12 @@ class _SearchPickerBottomSheet<T> extends StatefulWidget {
   final Future<T?> Function() onAddRequested;
 
   @override
-  State<_SearchPickerBottomSheet<T>> createState() => _SearchPickerBottomSheetState<T>();
+  State<_SearchPickerBottomSheet<T>> createState() =>
+      _SearchPickerBottomSheetState<T>();
 }
 
-class _SearchPickerBottomSheetState<T> extends State<_SearchPickerBottomSheet<T>> {
+class _SearchPickerBottomSheetState<T>
+    extends State<_SearchPickerBottomSheet<T>> {
   final searchCtrl = TextEditingController();
   late List<T> filtered;
 
@@ -494,7 +547,9 @@ class _SearchPickerBottomSheetState<T> extends State<_SearchPickerBottomSheet<T>
     setState(() {
       filtered = q.isEmpty
           ? widget.items
-          : widget.items.where((x) => widget.itemLabel(x).toLowerCase().contains(q)).toList();
+          : widget.items
+                .where((x) => widget.itemLabel(x).toLowerCase().contains(q))
+                .toList();
     });
   }
 
@@ -519,7 +574,12 @@ class _SearchPickerBottomSheetState<T> extends State<_SearchPickerBottomSheet<T>
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                 child: Row(
                   children: [
-                    Expanded(child: Text(widget.title, style: const TextStyle(fontWeight: FontWeight.bold))),
+                    Expanded(
+                      child: Text(
+                        widget.title,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
                     TextButton.icon(
                       onPressed: () async {
                         await widget.onAddRequested();
@@ -544,7 +604,7 @@ class _SearchPickerBottomSheetState<T> extends State<_SearchPickerBottomSheet<T>
               Expanded(
                 child: ListView.separated(
                   itemCount: filtered.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (_, i) {
                     final item = filtered[i];
                     return ListTile(

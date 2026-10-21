@@ -40,7 +40,10 @@ class _ManageRecurringScreenState extends State<ManageRecurringScreen> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
         ],
       ),
     );
@@ -73,9 +76,9 @@ class _ManageRecurringScreenState extends State<ManageRecurringScreen> {
           final msg = s.toast;
           if (msg == null) return;
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(msg)),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(msg)));
 
           // ✅ Only apply sets lastApplySummary, and we clear it on ClearRecurringToast now
           final summary = s.lastApplySummary;
@@ -89,6 +92,7 @@ class _ManageRecurringScreenState extends State<ManageRecurringScreen> {
             }
           }
 
+          if (!context.mounted) return;
           context.read<RecurringBloc>().add(const ClearRecurringToast());
         },
         builder: (context, state) {
@@ -109,8 +113,8 @@ class _ManageRecurringScreenState extends State<ManageRecurringScreen> {
                         onPressed: state.status == RecurringStatus.loading
                             ? null
                             : () => context.read<RecurringBloc>().add(
-                          ApplyRecurringToMonthRequested(monthId),
-                        ),
+                                ApplyRecurringToMonthRequested(monthId),
+                              ),
                         child: const Text('Apply'),
                       ),
                     ),
@@ -129,13 +133,15 @@ class _ManageRecurringScreenState extends State<ManageRecurringScreen> {
 
                     final items = state.items;
                     if (items.isEmpty) {
-                      return const Center(child: Text('No recurring templates yet.'));
+                      return const Center(
+                        child: Text('No recurring templates yet.'),
+                      );
                     }
 
                     return ListView.separated(
                       padding: const EdgeInsets.all(12),
                       itemCount: items.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (_, i) {
                         final t = items[i];
                         final isExpense = t.type == 'expense';
@@ -145,9 +151,9 @@ class _ManageRecurringScreenState extends State<ManageRecurringScreen> {
                           title: Text(t.title),
                           subtitle: Text(
                             '${isExpense ? "Expense" : "Income"}'
-                                ' • Day ${t.dayOfMonth}'
-                                ' • ${minorToRupees(t.amountMinor)}'
-                                '${(t.note == null || t.note!.trim().isEmpty) ? "" : " • ${t.note}"}',
+                            ' • Day ${t.dayOfMonth}'
+                            ' • ${minorToRupees(t.amountMinor)}'
+                            '${(t.note == null || t.note!.trim().isEmpty) ? "" : " • ${t.note}"}',
                           ),
                           leading: Switch(
                             value: t.isActive,
@@ -161,11 +167,14 @@ class _ManageRecurringScreenState extends State<ManageRecurringScreen> {
                                 await Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => RecurringFormScreen(existing: t),
+                                    builder: (_) =>
+                                        RecurringFormScreen(existing: t),
                                   ),
                                 );
                                 if (!context.mounted) return;
-                                context.read<RecurringBloc>().add(const LoadRecurringTemplates());
+                                context.read<RecurringBloc>().add(
+                                  const LoadRecurringTemplates(),
+                                );
                               } else if (v == 'delete') {
                                 context.read<RecurringBloc>().add(
                                   DeleteRecurringTemplateRequested(t.id),
@@ -174,18 +183,24 @@ class _ManageRecurringScreenState extends State<ManageRecurringScreen> {
                             },
                             itemBuilder: (_) => const [
                               PopupMenuItem(value: 'edit', child: Text('Edit')),
-                              PopupMenuItem(value: 'delete', child: Text('Delete')),
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: Text('Delete'),
+                              ),
                             ],
                           ),
                           onTap: () async {
                             await Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => RecurringFormScreen(existing: t),
+                                builder: (_) =>
+                                    RecurringFormScreen(existing: t),
                               ),
                             );
                             if (!context.mounted) return;
-                            context.read<RecurringBloc>().add(const LoadRecurringTemplates());
+                            context.read<RecurringBloc>().add(
+                              const LoadRecurringTemplates(),
+                            );
                           },
                         );
                       },

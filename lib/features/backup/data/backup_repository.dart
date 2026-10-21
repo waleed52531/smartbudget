@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
+import 'package:drift/native.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/db/app_db.dart';
@@ -12,35 +13,45 @@ class BackupRepository {
   BackupRepository(this.db);
   final AppDatabase db;
 
-  Future<File> exportBackupJson() async {
-    final now = DateTime.now();
-
-    // Export tables (add/remove based on your DB)
-    final nodes = await db.select(db.categoryNodes).get();
-    final months = await db.select(db.budgetMonths).get();
-    final limits = await db.select(db.budgetLimits).get();
-    final tx = await db.select(db.transactions).get();
-    final recTpl = await db.select(db.recurringTemplates).get();
-    final recApplied = await db.select(db.recurringApplied).get();
-
-    final payload = <String, dynamic>{
+  Future<Map<String, dynamic>> exportPayload() => db.transaction(
+    () async => {
       'format': 'monthly_budget_backup',
       'version': 1,
-      'exportedAt': now.toIso8601String(),
+      'exportedAt': DateTime.now().toIso8601String(),
       'schemaVersion': db.schemaVersion,
       'tables': {
-        'categoryNodes': nodes.map((e) => e.toJson()).toList(),
-        'budgetMonths': months.map((e) => e.toJson()).toList(),
-        'budgetLimits': limits.map((e) => e.toJson()).toList(),
-        'transactions': tx.map((e) => e.toJson()).toList(),
-        'recurringTemplates': recTpl.map((e) => e.toJson()).toList(),
-        'recurringApplied': recApplied.map((e) => e.toJson()).toList(),
+        'categoryNodes': (await db.select(db.categoryNodes).get())
+            .map((e) => e.toJson())
+            .toList(),
+        'budgetMonths': (await db.select(db.budgetMonths).get())
+            .map((e) => e.toJson())
+            .toList(),
+        'budgetLimits': (await db.select(db.budgetLimits).get())
+            .map((e) => e.toJson())
+            .toList(),
+        'transactions': (await db.select(db.transactions).get())
+            .map((e) => e.toJson())
+            .toList(),
+        'recurringTemplates': (await db.select(db.recurringTemplates).get())
+            .map((e) => e.toJson())
+            .toList(),
+        'recurringApplied': (await db.select(db.recurringApplied).get())
+            .map((e) => e.toJson())
+            .toList(),
       },
-    };
+    },
+  );
 
+  Future<File> exportBackupJson() async {
+    final payload = await exportPayload();
     final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/budget_backup_${now.millisecondsSinceEpoch}.json');
-    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(payload), flush: true);
+    final file = File(
+      '${dir.path}/budget_backup_${DateTime.now().microsecondsSinceEpoch}.json',
+    );
+    await file.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(payload),
+      flush: true,
+    );
     return file;
   }
 
@@ -48,32 +59,67 @@ class BackupRepository {
     required File file,
     required RestoreMode mode,
   }) async {
-    final raw = await file.readAsString();
-    final decoded = jsonDecode(raw);
-
-    if (decoded is! Map<String, dynamic>) {
-      throw Exception('Invalid backup file');
+    final decoded = jsonDecode(await file.readAsString());
+    if (decoded is! Map<String, dynamic> ||
+        decoded['format'] != 'monthly_budget_backup') {
+      throw const FormatException('Not a Smart Budget backup.');
     }
-    if (decoded['format'] != 'monthly_budget_backup') {
-      throw Exception('Not a Monthly Budget backup');
+    if (decoded['version'] != 1 || ![2, 3].contains(decoded['schemaVersion'])) {
+      throw const FormatException(
+        'Unsupported backup format or database version.',
+      );
     }
-
     final tables = decoded['tables'];
-    if (tables is! Map<String, dynamic>) {
-      throw Exception('Backup tables missing');
+    const names = {
+      'categoryNodes',
+      'budgetMonths',
+      'budgetLimits',
+      'transactions',
+      'recurringTemplates',
+      'recurringApplied',
+    };
+    if (tables is! Map<String, dynamic> ||
+        tables.length != names.length ||
+        !tables.keys.toSet().containsAll(names)) {
+      throw const FormatException(
+        'Backup must contain all six tables. Nothing restored.',
+      );
     }
 
-    // Read lists
-    final List<dynamic> nodes = (tables['categoryNodes'] as List<dynamic>? ?? []);
-    final List<dynamic> months = (tables['budgetMonths'] as List<dynamic>? ?? []);
-    final List<dynamic> limits = (tables['budgetLimits'] as List<dynamic>? ?? []);
-    final List<dynamic> tx = (tables['transactions'] as List<dynamic>? ?? []);
-    final List<dynamic> recTpl = (tables['recurringTemplates'] as List<dynamic>? ?? []);
-    final List<dynamic> recApplied = (tables['recurringApplied'] as List<dynamic>? ?? []);
+    final nodes = _decode(tables['categoryNodes'], CategoryNode.fromJson)
+      ..sort((a, b) => a.type.compareTo(b.type));
+    final months = _decode(tables['budgetMonths'], BudgetMonth.fromJson);
+    final limits = _decode(tables['budgetLimits'], BudgetLimit.fromJson);
+    final tx = _decode(tables['transactions'], Transaction.fromJson);
+    final templates = _decode(
+      tables['recurringTemplates'],
+      RecurringTemplate.fromJson,
+    );
+    final applied = _decode(
+      tables['recurringApplied'],
+      RecurringAppliedRow.fromJson,
+    );
+
+    Future<void> writeRows(AppDatabase target, {bool merge = false}) async {
+      await _insert(target, target.categoryNodes, nodes, merge: merge);
+      await _insert(target, target.budgetMonths, months, merge: merge);
+      await _insert(target, target.budgetLimits, limits, merge: merge);
+      await _insert(target, target.transactions, tx, merge: merge);
+      await _insert(target, target.recurringTemplates, templates, merge: merge);
+      await _insert(target, target.recurringApplied, applied, merge: merge);
+      await target.validateIntegrity();
+    }
+
+    // Validate the entire standalone backup before touching the destination.
+    final staging = AppDatabase.withExecutor(NativeDatabase.memory());
+    try {
+      await staging.transaction(() => writeRows(staging));
+    } finally {
+      await staging.close();
+    }
 
     await db.transaction(() async {
       if (mode == RestoreMode.overwrite) {
-        // Delete children first (FK-safe order)
         await db.delete(db.recurringApplied).go();
         await db.delete(db.recurringTemplates).go();
         await db.delete(db.transactions).go();
@@ -81,39 +127,53 @@ class BackupRepository {
         await db.delete(db.budgetMonths).go();
         await db.delete(db.categoryNodes).go();
       }
-
-      // Insert parent tables first
-      // Insert parent tables first
-      for (final m in nodes) {
-        final row = CategoryNode.fromJson(m as Map<String, dynamic>);
-        await db.into(db.categoryNodes).insert(row, mode: InsertMode.insertOrReplace);
-      }
-
-      for (final m in months) {
-        final row = BudgetMonth.fromJson(m as Map<String, dynamic>);
-        await db.into(db.budgetMonths).insert(row, mode: InsertMode.insertOrReplace);
-      }
-
-      for (final m in limits) {
-        final row = BudgetLimit.fromJson(m as Map<String, dynamic>);
-        await db.into(db.budgetLimits).insert(row, mode: InsertMode.insertOrReplace);
-      }
-
-      for (final m in tx) {
-        final row = Transaction.fromJson(m as Map<String, dynamic>);
-        await db.into(db.transactions).insert(row, mode: InsertMode.insertOrReplace);
-      }
-
-      for (final m in recTpl) {
-        final row = RecurringTemplate.fromJson(m as Map<String, dynamic>);
-        await db.into(db.recurringTemplates).insert(row, mode: InsertMode.insertOrReplace);
-      }
-
-      for (final m in recApplied) {
-        final row = RecurringAppliedRow.fromJson(m as Map<String, dynamic>);
-        await db.into(db.recurringApplied).insert(row, mode: InsertMode.insertOrReplace);
-      }
-
+      await writeRows(db, merge: mode == RestoreMode.merge);
     });
+  }
+}
+
+List<D> _decode<D extends DataClass>(
+  dynamic value,
+  D Function(Map<String, dynamic>) decode,
+) {
+  if (value is! List) {
+    throw const FormatException('Backup table must be a list.');
+  }
+  return value.map((raw) {
+    if (raw is! Map<String, dynamic>) {
+      throw const FormatException('Invalid backup row.');
+    }
+    final row = decode(raw);
+    final keys = row.toJson().keys.toSet();
+    if (raw.length != keys.length || !raw.keys.toSet().containsAll(keys)) {
+      throw const FormatException('Incomplete or unsupported backup row.');
+    }
+    return row;
+  }).toList();
+}
+
+Future<void> _insert<T extends Table, D extends DataClass>(
+  AppDatabase db,
+  TableInfo<T, D> table,
+  List<D> rows, {
+  required bool merge,
+}) async {
+  final existing = merge
+      ? {
+          for (final row in await db.select(table).get())
+            row.toJson()['id']: row,
+        }
+      : <dynamic, D>{};
+  for (final row in rows) {
+    final previous = existing[row.toJson()['id']];
+    if (previous != null) {
+      if (previous.toJsonString() != row.toJsonString()) {
+        throw DataIntegrityException([
+          'Conflicting records in ${table.actualTableName}; choose a resolution before restoring',
+        ]);
+      }
+      continue;
+    }
+    await db.into(table).insert(row as Insertable<D>);
   }
 }

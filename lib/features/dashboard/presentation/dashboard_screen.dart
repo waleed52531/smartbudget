@@ -84,10 +84,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final selected = MonthCubit.toDate(monthId);
     final now = DateTime.now();
-    final isCurrentMonth = (now.year == selected.year && now.month == selected.month);
+    final isCurrentMonth =
+        (now.year == selected.year && now.month == selected.month);
 
     final daysInMonth = DateTime(selected.year, selected.month + 1, 0).day;
-    final daysElapsed = isCurrentMonth ? (now.day.clamp(1, daysInMonth) as int) : daysInMonth;
+    final daysElapsed = isCurrentMonth
+        ? now.day.clamp(1, daysInMonth)
+        : daysInMonth;
 
     return Scaffold(
       appBar: AppBar(
@@ -96,7 +99,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           IconButton(
             icon: const Icon(Icons.calendar_month_outlined),
             onPressed: () async {
-              final picked = await showMonthPickerSheet(context, MonthCubit.toDate(monthId));
+              final picked = await showMonthPickerSheet(
+                context,
+                MonthCubit.toDate(monthId),
+              );
               if (picked != null && context.mounted) {
                 context.read<MonthCubit>().setFromDate(picked);
               }
@@ -111,7 +117,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           IconButton(
             icon: const Icon(Icons.repeat_outlined),
             onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const ManageRecurringScreen()));
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ManageRecurringScreen(),
+                ),
+              );
             },
           ),
         ],
@@ -119,9 +130,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       body: BlocListener<ExportBloc, ExportState>(
         listener: (context, s) async {
           if (s.status == ExportStatus.success && s.file != null) {
-            await Share.shareXFiles(
-              [XFile(s.file!.path)],
-              text: 'Monthly Budget CSV (${MonthCubit.display(monthId)})',
+            await SharePlus.instance.share(
+              ShareParams(
+                files: [XFile(s.file!.path)],
+                text: 'Monthly Budget CSV (${MonthCubit.display(monthId)})',
+              ),
             );
           } else if (s.status == ExportStatus.failure) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -137,7 +150,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             if (state.status == DashboardStatus.failure) {
               return Center(child: Text('Error: ${state.error}'));
             }
-            if (state.status != DashboardStatus.loaded || state.month == null || state.totals == null) {
+            if (state.status != DashboardStatus.loaded ||
+                state.month == null ||
+                state.totals == null) {
               return const Center(child: Text('Loading...'));
             }
 
@@ -146,8 +161,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             final spent = state.totals!.totalSpent;
             final remaining = state.remainingMinor;
 
-            final projectedSpent = _projectMinor(spent, daysElapsed, daysInMonth);
-            final projectedRemaining = totalBudget > 0 ? (totalBudget - projectedSpent) : 0;
+            final projectedSpent = _projectMinor(
+              spent,
+              daysElapsed,
+              daysInMonth,
+            );
+            final projectedRemaining = totalBudget > 0
+                ? (totalBudget - projectedSpent)
+                : 0;
             final pace = _paceLabel(
               spentMinor: spent,
               budgetMinor: totalBudget,
@@ -193,12 +214,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     title: 'Saving',
                     lines: [
                       'Saving Target: ${minorToRupees(savingTarget)}',
-                      'Saving Progress: ${minorToRupees(state.savingProgressMinor)}',
+                      'Net Income (Income - Expenses): ${minorToRupees(state.netIncomeMinor)}',
                     ],
                   ),
                   const SizedBox(height: 12),
                   FutureBuilder<int>(
-                    future: context.read<RecurringRepository>().pendingCount(monthId),
+                    future: context.read<RecurringRepository>().pendingCount(
+                      monthId,
+                    ),
                     builder: (context, snap) {
                       final pending = snap.data ?? 0;
                       if (pending <= 0) return const SizedBox.shrink();
@@ -209,7 +232,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           subtitle: const Text('Apply them to this month'),
                           trailing: ElevatedButton(
                             onPressed: () {
-                              context.read<RecurringBloc>().add(ApplyRecurringToMonthRequested(monthId));
+                              context.read<RecurringBloc>().add(
+                                ApplyRecurringToMonthRequested(monthId),
+                              );
                             },
                             child: const Text('Apply'),
                           ),
@@ -219,16 +244,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 12),
                   FutureBuilder(
-                    future: context.read<ReportsRepository>().topSubcategories(monthId),
+                    future: context.read<ReportsRepository>().topSubcategories(
+                      monthId,
+                    ),
                     builder: (context, snap) {
                       if (!snap.hasData) return const SizedBox.shrink();
-                      final subs = (snap.data as List<SubcategoryRow>).take(4).toList();
+                      final subs = (snap.data as List<SubcategoryRow>)
+                          .take(4)
+                          .toList();
                       if (subs.isEmpty) return const SizedBox.shrink();
 
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Quick Add (Top Leaks)', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text(
+                            'Quick Add (Top Leaks)',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
@@ -247,7 +279,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     ),
                                   );
                                   if (!context.mounted) return;
-                                  context.read<DashboardBloc>().add(LoadDashboard(monthId));
+                                  context.read<DashboardBloc>().add(
+                                    LoadDashboard(monthId),
+                                  );
                                 },
                               );
                             }).toList(),
@@ -263,16 +297,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Forecast', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text(
+                            'Forecast',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           const SizedBox(height: 6),
                           Text('Days: $daysElapsed / $daysInMonth'),
                           Text('Pace: $pace'),
                           const SizedBox(height: 6),
                           if (isCurrentMonth && totalBudget > 0) ...[
-                            Text('Projected Spend (end of month): ${minorToRupees(projectedSpent)}'),
-                            Text('Projected Remaining: ${minorToRupees(projectedRemaining)}'),
+                            Text(
+                              'Projected Spend (end of month): ${minorToRupees(projectedSpent)}',
+                            ),
+                            Text(
+                              'Projected Remaining: ${minorToRupees(projectedRemaining)}',
+                            ),
                           ] else ...[
-                            const Text('Select current month to see projections'),
+                            const Text(
+                              'Select current month to see projections',
+                            ),
                           ],
                         ],
                       ),
@@ -280,7 +323,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 12),
                   if (isCurrentMonth && alerts.isNotEmpty) ...[
-                    const Text('Alerts (Projected Over Budget)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text(
+                      'Alerts (Projected Over Budget)',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     const SizedBox(height: 8),
                     ...alerts.take(5).map((a) {
                       return Card(
@@ -295,28 +341,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     }),
                     const SizedBox(height: 12),
                   ] else if (isCurrentMonth) ...[
-                    const Text('Alerts', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text(
+                      'Alerts',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     const SizedBox(height: 6),
                     const Text('No projected overspends. Keep it up.'),
                     const SizedBox(height: 12),
                   ],
-                  const Text('Categories', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Categories',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 8),
                   ...state.categoryCards.map((c) {
-                    final limitText = c.budgetLimit == null ? '-' : minorToRupees(c.budgetLimit!);
-                    final remText = c.remaining == null ? '-' : minorToRupees(c.remaining!);
+                    final limitText = c.budgetLimit == null
+                        ? '-'
+                        : minorToRupees(c.budgetLimit!);
+                    final remText = c.remaining == null
+                        ? '-'
+                        : minorToRupees(c.remaining!);
 
-                    final overspent = c.budgetLimit != null && c.spent > c.budgetLimit!;
-                    final proj = isCurrentMonth ? _projectMinor(c.spent, daysElapsed, daysInMonth) : c.spent;
-                    final projOver = (isCurrentMonth && c.budgetLimit != null && proj > c.budgetLimit!);
+                    final overspent =
+                        c.budgetLimit != null && c.spent > c.budgetLimit!;
+                    final proj = isCurrentMonth
+                        ? _projectMinor(c.spent, daysElapsed, daysInMonth)
+                        : c.spent;
+                    final projOver =
+                        (isCurrentMonth &&
+                        c.budgetLimit != null &&
+                        proj > c.budgetLimit!);
 
                     return Card(
                       child: ListTile(
                         title: Text(c.categoryName),
                         subtitle: Text(
                           'Spent: ${minorToRupees(c.spent)} | Limit: $limitText | Remaining: $remText'
-                              '${overspent ? "  (OVER)" : ""}'
-                              '${projOver ? "  | Projected OVER by ${minorToRupees(proj - c.budgetLimit!)}" : ""}',
+                          '${overspent ? "  (OVER)" : ""}'
+                          '${projOver ? "  | Projected OVER by ${minorToRupees(proj - c.budgetLimit!)}" : ""}',
                         ),
                         onTap: () {
                           Navigator.push(
@@ -332,7 +394,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         },
                         onLongPress: () async {
                           final db = context.read<AppDatabase>();
-                          final subIds = await db.getSubcategoryIdsByCategory(c.categoryId);
+                          final subIds = await db.getSubcategoryIdsByCategory(
+                            c.categoryId,
+                          );
                           if (!context.mounted) return;
 
                           await _openTransactionsWithFilter(

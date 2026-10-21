@@ -1,5 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../../core/db/app_db.dart';
+import '../../../core/db/app_db.dart';
 import '../data/transaction_repository.dart';
 import 'tranasaction_event.dart';
 import 'tranasaction_state.dart';
@@ -17,28 +17,42 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
   }
 
   final TransactionRepository repo;
+  int _loadGeneration = 0;
 
-  Future<void> _onLoad(LoadMonthTransactions e, Emitter<TransactionState> emit) async {
-    emit(state.copyWith(status: TxStatus.loading, monthId: e.monthId, error: ''));
+  Future<void> _onLoad(
+    LoadMonthTransactions e,
+    Emitter<TransactionState> emit,
+  ) async {
+    final generation = ++_loadGeneration;
+    emit(
+      state.copyWith(status: TxStatus.loading, monthId: e.monthId, error: ''),
+    );
     try {
       final raw = await repo.listByMonth(e.monthId);
       final filtered = _applyFilters(raw, state.filters);
       final (exp, inc) = _totals(filtered);
 
-      emit(state.copyWith(
-        status: TxStatus.loaded,
-        monthId: e.monthId,
-        items: filtered,
-        totalExpenseMinor: exp,
-        totalIncomeMinor: inc,
-        error: '',
-      ));
+      if (generation != _loadGeneration) return;
+      emit(
+        state.copyWith(
+          status: TxStatus.loaded,
+          monthId: e.monthId,
+          items: filtered,
+          totalExpenseMinor: exp,
+          totalIncomeMinor: inc,
+          error: '',
+        ),
+      );
     } catch (err) {
+      if (generation != _loadGeneration) return;
       emit(state.copyWith(status: TxStatus.failure, error: err.toString()));
     }
   }
 
-  Future<void> _onAddExpense(AddExpenseRequested e, Emitter<TransactionState> emit) async {
+  Future<void> _onAddExpense(
+    AddExpenseRequested e,
+    Emitter<TransactionState> emit,
+  ) async {
     try {
       await repo.addExpense(
         monthId: e.monthId,
@@ -48,13 +62,20 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
         note: e.note,
       );
 
+      e.completion?.complete();
       add(LoadMonthTransactions(e.monthId));
-    } catch (err) {
+    } catch (err, stack) {
+      if (e.completion != null && !e.completion!.isCompleted) {
+        e.completion!.completeError(err, stack);
+      }
       emit(state.copyWith(status: TxStatus.failure, error: err.toString()));
     }
   }
 
-  Future<void> _onAddIncome(AddIncomeRequested e, Emitter<TransactionState> emit) async {
+  Future<void> _onAddIncome(
+    AddIncomeRequested e,
+    Emitter<TransactionState> emit,
+  ) async {
     try {
       await repo.addIncome(
         monthId: e.monthId,
@@ -63,13 +84,20 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
         note: e.note,
       );
 
+      e.completion?.complete();
       add(LoadMonthTransactions(e.monthId));
-    } catch (err) {
+    } catch (err, stack) {
+      if (e.completion != null && !e.completion!.isCompleted) {
+        e.completion!.completeError(err, stack);
+      }
       emit(state.copyWith(status: TxStatus.failure, error: err.toString()));
     }
   }
 
-  Future<void> _onDelete(DeleteTransactionRequested e, Emitter<TransactionState> emit) async {
+  Future<void> _onDelete(
+    DeleteTransactionRequested e,
+    Emitter<TransactionState> emit,
+  ) async {
     try {
       await repo.deleteById(e.id);
       add(LoadMonthTransactions(e.monthId));
@@ -78,7 +106,10 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
     }
   }
 
-  Future<void> _onUpdate(UpdateTransactionRequested e, Emitter<TransactionState> emit) async {
+  Future<void> _onUpdate(
+    UpdateTransactionRequested e,
+    Emitter<TransactionState> emit,
+  ) async {
     try {
       await repo.updateTransaction(
         id: e.id,
@@ -89,19 +120,29 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
         subcategoryId: e.subcategoryId,
         note: e.note,
       );
+      e.completion?.complete();
       add(LoadMonthTransactions(e.monthId));
-    } catch (err) {
+    } catch (err, stack) {
+      if (e.completion != null && !e.completion!.isCompleted) {
+        e.completion!.completeError(err, stack);
+      }
       emit(state.copyWith(status: TxStatus.failure, error: err.toString()));
     }
   }
 
-  void _onApplyFilters(ApplyTxFiltersRequested e, Emitter<TransactionState> emit) {
-    emit(state.copyWith(filters: e.filters));
+  void _onApplyFilters(
+    ApplyTxFiltersRequested e,
+    Emitter<TransactionState> emit,
+  ) {
+    emit(state.copyWith(filters: e.filters, status: TxStatus.loading));
     add(LoadMonthTransactions(e.monthId)); // ✅ correct month, always
   }
 
-  void _onClearFilters(ClearTxFiltersRequested e, Emitter<TransactionState> emit) {
-    emit(state.copyWith(filters: TxFilters.empty));
+  void _onClearFilters(
+    ClearTxFiltersRequested e,
+    Emitter<TransactionState> emit,
+  ) {
+    emit(state.copyWith(filters: TxFilters.empty, status: TxStatus.loading));
     add(LoadMonthTransactions(e.monthId)); // ✅ correct month, always
   }
 }
@@ -115,7 +156,9 @@ List<Transaction> _applyFilters(List<Transaction> input, TxFilters f) {
     out = out.where((t) => t.type == 'income');
   }
 
-  if (f.fromMillis != null) out = out.where((t) => t.dateMillis >= f.fromMillis!);
+  if (f.fromMillis != null) {
+    out = out.where((t) => t.dateMillis >= f.fromMillis!);
+  }
   if (f.toMillis != null) out = out.where((t) => t.dateMillis <= f.toMillis!);
 
   if (f.minMinor != null) out = out.where((t) => t.amountMinor >= f.minMinor!);
@@ -123,9 +166,11 @@ List<Transaction> _applyFilters(List<Transaction> input, TxFilters f) {
 
   if (f.subcategoryId != null) {
     out = out.where((t) => t.subcategoryId == f.subcategoryId);
-  } else if (f.categorySubcategoryIds != null && f.categorySubcategoryIds!.isNotEmpty) {
+  } else if (f.categorySubcategoryIds != null) {
     final set = f.categorySubcategoryIds!.toSet();
-    out = out.where((t) => t.subcategoryId != null && set.contains(t.subcategoryId));
+    out = out.where(
+      (t) => t.subcategoryId != null && set.contains(t.subcategoryId),
+    );
   }
 
   final q = f.search.trim().toLowerCase();

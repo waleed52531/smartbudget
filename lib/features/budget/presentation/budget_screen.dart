@@ -45,19 +45,19 @@ class _BudgetScreenState extends State<BudgetScreen> {
       );
       // ✅ don't show snackbar here (BlocListener will handle)
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Invalid input: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Invalid input: $e')));
     }
   }
 
   Future<void> _setCategoryLimit(
-      BuildContext context,
-      String monthId,
-      String categoryId,
-      String categoryName,
-      int? currentLimit,
-      ) async {
+    BuildContext context,
+    String monthId,
+    String categoryId,
+    String categoryName,
+    int? currentLimit,
+  ) async {
     final ctrl = TextEditingController(
       text: currentLimit == null ? '' : minorToRupees(currentLimit),
     );
@@ -88,7 +88,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
       ),
     );
 
-    if (result == null) return;
+    if (result == null || !context.mounted) return;
 
     if (result.isEmpty) {
       context.read<BudgetBloc>().add(
@@ -107,9 +107,9 @@ class _BudgetScreenState extends State<BudgetScreen> {
         ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Invalid limit: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Invalid limit: $e')));
     }
   }
 
@@ -147,8 +147,8 @@ class _BudgetScreenState extends State<BudgetScreen> {
                   title: const Text('Copy previous month budget?'),
                   content: Text(
                     'Copy from $prev into $monthId.\n\n'
-                        'Merge = copy only missing values.\n'
-                        'Overwrite = replace everything.',
+                    'Merge = copy only missing values.\n'
+                    'Overwrite = replace everything.',
                   ),
                   actions: [
                     TextButton(
@@ -156,18 +156,20 @@ class _BudgetScreenState extends State<BudgetScreen> {
                       child: const Text('Cancel'),
                     ),
                     TextButton(
-                      onPressed: () => Navigator.pop(context, CopyMode.mergeMissingOnly),
+                      onPressed: () =>
+                          Navigator.pop(context, CopyMode.mergeMissingOnly),
                       child: const Text('Merge'),
                     ),
                     ElevatedButton(
-                      onPressed: () => Navigator.pop(context, CopyMode.overwriteAll),
+                      onPressed: () =>
+                          Navigator.pop(context, CopyMode.overwriteAll),
                       child: const Text('Overwrite'),
                     ),
                   ],
                 ),
               );
 
-              if (mode == null) return;
+              if (mode == null || !context.mounted) return;
 
               context.read<BudgetBloc>().add(
                 CopyFromPreviousMonthRequested(monthId: monthId, mode: mode),
@@ -181,7 +183,9 @@ class _BudgetScreenState extends State<BudgetScreen> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const ManageCategoriesScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const ManageCategoriesScreen(),
+                ),
               );
             },
           ),
@@ -198,9 +202,9 @@ class _BudgetScreenState extends State<BudgetScreen> {
             _prefilledMonthId = null;
           }
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(msg)),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(msg)));
 
           context.read<BudgetBloc>().add(const ClearBudgetToast());
         },
@@ -229,7 +233,9 @@ class _BudgetScreenState extends State<BudgetScreen> {
                 children: [
                   TextField(
                     controller: totalCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     decoration: const InputDecoration(
                       labelText: 'Total Monthly Budget (PKR)',
                     ),
@@ -237,7 +243,9 @@ class _BudgetScreenState extends State<BudgetScreen> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: savingCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     decoration: const InputDecoration(
                       labelText: 'Saving Target (PKR)',
                     ),
@@ -262,7 +270,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
                   Expanded(
                     child: ListView.separated(
                       itemCount: state.categories.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (_, i) {
                         final c = state.categories[i];
                         final limit = state.categoryLimits[c.id];
@@ -270,7 +278,9 @@ class _BudgetScreenState extends State<BudgetScreen> {
                         return ListTile(
                           title: Text(c.name),
                           subtitle: Text(
-                            limit == null ? 'No limit set' : 'Limit: ${minorToRupees(limit)}',
+                            limit == null
+                                ? 'No limit set'
+                                : 'Limit: ${minorToRupees(limit)}',
                           ),
                           trailing: const Icon(Icons.edit),
                           onTap: () => _setCategoryLimit(

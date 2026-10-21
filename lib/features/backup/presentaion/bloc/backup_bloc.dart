@@ -12,23 +12,63 @@ class BackupBloc extends Bloc<BackupEvent, BackupState> {
 
   final BackupRepository repo;
 
-  Future<void> _onExport(ExportBackupRequested e, Emitter<BackupState> emit) async {
-    emit(state.copyWith(status: BackupStatus.loading, error: '', toast: null));
+  Future<void> _onExport(
+    ExportBackupRequested e,
+    Emitter<BackupState> emit,
+  ) async {
+    emit(
+      state.copyWith(
+        status: BackupStatus.loading,
+        error: '',
+        toast: null,
+        clearFile: true,
+      ),
+    );
     try {
       final file = await repo.exportBackupJson();
-      emit(state.copyWith(status: BackupStatus.success, file: file, toast: 'Backup exported'));
+      emit(
+        state.copyWith(
+          status: BackupStatus.success,
+          file: file,
+          toast: 'Backup exported',
+        ),
+      );
     } catch (err) {
-      emit(state.copyWith(status: BackupStatus.failure, error: err.toString(), toast: 'Export failed: $err'));
+      emit(
+        state.copyWith(
+          status: BackupStatus.failure,
+          error: err.toString(),
+          toast: 'Export failed: $err',
+        ),
+      );
     }
   }
 
-  Future<void> _onRestore(RestoreBackupRequested e, Emitter<BackupState> emit) async {
-    emit(state.copyWith(status: BackupStatus.loading, error: '', toast: null));
+  Future<void> _onRestore(
+    RestoreBackupRequested e,
+    Emitter<BackupState> emit,
+  ) async {
+    emit(
+      state.copyWith(
+        status: BackupStatus.loading,
+        error: '',
+        toast: null,
+        clearFile: true,
+      ),
+    );
     try {
       await repo.restoreFromJsonFile(file: e.file, mode: e.mode);
-      emit(state.copyWith(status: BackupStatus.success, toast: 'Backup restored'));
+      emit(
+        state.copyWith(status: BackupStatus.success, toast: 'Backup restored'),
+      );
     } catch (err) {
-      emit(state.copyWith(status: BackupStatus.failure, error: err.toString(), toast: 'Restore failed: $err'));
+      emit(
+        state.copyWith(
+          status: BackupStatus.failure,
+          error: err.toString(),
+          toast: 'Restore failed: $err',
+        ),
+      );
     }
   }
 }

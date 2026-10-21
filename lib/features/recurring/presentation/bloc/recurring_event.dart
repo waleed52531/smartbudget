@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:equatable/equatable.dart';
 
 abstract class RecurringEvent extends Equatable {
@@ -13,6 +15,7 @@ class LoadRecurringTemplates extends RecurringEvent {
 class SaveRecurringTemplateRequested extends RecurringEvent {
   const SaveRecurringTemplateRequested({
     this.id,
+    this.completion,
     required this.title,
     required this.amountMinor,
     required this.type, // 'income' | 'expense'
@@ -22,6 +25,7 @@ class SaveRecurringTemplateRequested extends RecurringEvent {
     required this.isActive,
   });
 
+  final Completer<void>? completion;
   final String? id;
   final String title;
   final int amountMinor;

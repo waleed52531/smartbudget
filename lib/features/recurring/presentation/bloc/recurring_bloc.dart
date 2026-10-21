@@ -15,38 +15,48 @@ class RecurringBloc extends Bloc<RecurringEvent, RecurringState> {
 
   final RecurringRepository repo;
 
-  Future<void> _onLoad(LoadRecurringTemplates e, Emitter<RecurringState> emit) async {
-    emit(state.copyWith(
-      status: RecurringStatus.loading,
-      clearToast: true,
-      clearApplySummary: true,
-      error: '',
-    ));
+  Future<void> _onLoad(
+    LoadRecurringTemplates e,
+    Emitter<RecurringState> emit,
+  ) async {
+    emit(
+      state.copyWith(
+        status: RecurringStatus.loading,
+        clearToast: true,
+        clearApplySummary: true,
+        error: '',
+      ),
+    );
 
     try {
       final items = await repo.listTemplates();
-      emit(state.copyWith(
-        status: RecurringStatus.loaded,
-        items: items,
-        error: '',
-      ));
+      emit(
+        state.copyWith(status: RecurringStatus.loaded, items: items, error: ''),
+      );
     } catch (err) {
-      emit(state.copyWith(
-        status: RecurringStatus.failure,
-        error: err.toString(),
-        toast: 'Load failed: $err',
-        clearApplySummary: true,
-      ));
+      emit(
+        state.copyWith(
+          status: RecurringStatus.failure,
+          error: err.toString(),
+          toast: 'Load failed: $err',
+          clearApplySummary: true,
+        ),
+      );
     }
   }
 
-  Future<void> _onSave(SaveRecurringTemplateRequested e, Emitter<RecurringState> emit) async {
-    emit(state.copyWith(
-      status: RecurringStatus.loading,
-      clearToast: true,
-      clearApplySummary: true,
-      error: '',
-    ));
+  Future<void> _onSave(
+    SaveRecurringTemplateRequested e,
+    Emitter<RecurringState> emit,
+  ) async {
+    emit(
+      state.copyWith(
+        status: RecurringStatus.loading,
+        clearToast: true,
+        clearApplySummary: true,
+        error: '',
+      ),
+    );
 
     try {
       await repo.upsertTemplate(
@@ -60,82 +70,111 @@ class RecurringBloc extends Bloc<RecurringEvent, RecurringState> {
         isActive: e.isActive,
       );
 
+      e.completion?.complete();
       final items = await repo.listTemplates();
-      emit(state.copyWith(
-        status: RecurringStatus.loaded,
-        items: items,
-        toast: 'Recurring saved',
-        error: '',
-        clearApplySummary: true,
-      ));
-    } catch (err) {
-      emit(state.copyWith(
-        status: RecurringStatus.failure,
-        error: err.toString(),
-        toast: 'Save failed: $err',
-        clearApplySummary: true,
-      ));
+      emit(
+        state.copyWith(
+          status: RecurringStatus.loaded,
+          items: items,
+          toast: 'Recurring saved',
+          error: '',
+          clearApplySummary: true,
+        ),
+      );
+    } catch (err, stack) {
+      if (e.completion != null && !e.completion!.isCompleted) {
+        e.completion!.completeError(err, stack);
+      }
+      emit(
+        state.copyWith(
+          status: RecurringStatus.failure,
+          error: err.toString(),
+          toast: 'Save failed: $err',
+          clearApplySummary: true,
+        ),
+      );
     }
   }
 
-  Future<void> _onDelete(DeleteRecurringTemplateRequested e, Emitter<RecurringState> emit) async {
-    emit(state.copyWith(
-      status: RecurringStatus.loading,
-      clearToast: true,
-      clearApplySummary: true,
-      error: '',
-    ));
+  Future<void> _onDelete(
+    DeleteRecurringTemplateRequested e,
+    Emitter<RecurringState> emit,
+  ) async {
+    emit(
+      state.copyWith(
+        status: RecurringStatus.loading,
+        clearToast: true,
+        clearApplySummary: true,
+        error: '',
+      ),
+    );
 
     try {
       await repo.deleteTemplate(e.id);
       final items = await repo.listTemplates();
 
-      emit(state.copyWith(
-        status: RecurringStatus.loaded,
-        items: items,
-        toast: 'Recurring deleted',
-        error: '',
-        clearApplySummary: true,
-      ));
+      emit(
+        state.copyWith(
+          status: RecurringStatus.loaded,
+          items: items,
+          toast: 'Recurring deleted',
+          error: '',
+          clearApplySummary: true,
+        ),
+      );
     } catch (err) {
-      emit(state.copyWith(
-        status: RecurringStatus.failure,
-        error: err.toString(),
-        toast: 'Delete failed: $err',
-        clearApplySummary: true,
-      ));
+      emit(
+        state.copyWith(
+          status: RecurringStatus.failure,
+          error: err.toString(),
+          toast: 'Delete failed: $err',
+          clearApplySummary: true,
+        ),
+      );
     }
   }
 
-  Future<void> _onToggle(ToggleRecurringActiveRequested e, Emitter<RecurringState> emit) async {
+  Future<void> _onToggle(
+    ToggleRecurringActiveRequested e,
+    Emitter<RecurringState> emit,
+  ) async {
     // Don’t wipe UI with loading for a switch flip unless you enjoy jank
     try {
       await repo.toggleActive(e.id, e.active);
       final items = await repo.listTemplates();
 
-      emit(state.copyWith(
-        status: RecurringStatus.loaded,
-        items: items,
-        error: '',
-        clearApplySummary: true,
-      ));
+      emit(
+        state.copyWith(
+          status: RecurringStatus.loaded,
+          items: items,
+          error: '',
+          clearApplySummary: true,
+        ),
+      );
     } catch (err) {
-      emit(state.copyWith(
-        status: RecurringStatus.failure,
-        error: err.toString(),
-        toast: 'Update failed: $err',
-        clearApplySummary: true,
-      ));
+      emit(
+        state.copyWith(
+          status: RecurringStatus.failure,
+          error: err.toString(),
+          toast: 'Update failed: $err',
+          clearApplySummary: true,
+        ),
+      );
     }
   }
 
-  Future<void> _onApply(ApplyRecurringToMonthRequested e, Emitter<RecurringState> emit) async {
-    emit(state.copyWith(
-      status: RecurringStatus.loading,
-      clearToast: true,
-      clearApplySummary: true,
-      error: '',
-    ));
+  Future<void> _onApply(
+    ApplyRecurringToMonthRequested e,
+    Emitter<RecurringState> emit,
+  ) async {
+    emit(
+      state.copyWith(
+        status: RecurringStatus.loading,
+        clearToast: true,
+        clearApplySummary: true,
+        error: '',
+      ),
+    );
 
     try {
       final summary = await repo.applyToMonth(e.monthId);
@@ -146,20 +185,24 @@ class RecurringBloc extends Bloc<RecurringEvent, RecurringState> {
 
       final items = await repo.listTemplates();
 
-      emit(state.copyWith(
-        status: RecurringStatus.loaded,
-        items: items,
-        toast: msg,
-        lastApplySummary: summary,
-        error: '',
-      ));
+      emit(
+        state.copyWith(
+          status: RecurringStatus.loaded,
+          items: items,
+          toast: msg,
+          lastApplySummary: summary,
+          error: '',
+        ),
+      );
     } catch (err) {
-      emit(state.copyWith(
-        status: RecurringStatus.failure,
-        error: err.toString(),
-        toast: 'Apply failed: $err',
-        clearApplySummary: true,
-      ));
+      emit(
+        state.copyWith(
+          status: RecurringStatus.failure,
+          error: err.toString(),
+          toast: 'Apply failed: $err',
+          clearApplySummary: true,
+        ),
+      );
     }
   }
 

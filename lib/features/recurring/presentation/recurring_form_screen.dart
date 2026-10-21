@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -30,6 +32,7 @@ class _RecurringFormScreenState extends State<RecurringFormScreen> {
   CategoryNode? selectedSubcategory;
 
   bool loading = true;
+  bool saving = false;
   String? error;
 
   bool get isEdit => widget.existing != null;
@@ -54,13 +57,16 @@ class _RecurringFormScreenState extends State<RecurringFormScreen> {
   Future<void> _loadCats() async {
     try {
       final repo = context.read<CategoryRepository>();
-      categories = await repo.getCategories();
+      categories = await repo.getAllCategories(includeArchived: isEdit);
       selectedCategory = categories.isNotEmpty ? categories.first : null;
 
       if (isEdit && isExpense && widget.existing!.subcategoryId != null) {
         final subId = widget.existing!.subcategoryId!;
         for (final c in categories) {
-          final subs = await repo.getSubcategories(c.id);
+          final subs = await repo.getAllSubcategories(
+            c.id,
+            includeArchived: isEdit,
+          );
           final match = subs.where((x) => x.id == subId).toList();
           if (match.isNotEmpty) {
             selectedCategory = c;
@@ -72,12 +78,19 @@ class _RecurringFormScreenState extends State<RecurringFormScreen> {
       }
 
       if (subcategories.isEmpty && selectedCategory != null) {
-        subcategories = await repo.getSubcategories(selectedCategory!.id);
-        selectedSubcategory = subcategories.isNotEmpty ? subcategories.first : null;
+        subcategories = await repo.getAllSubcategories(
+          selectedCategory!.id,
+          includeArchived: isEdit,
+        );
+        selectedSubcategory = subcategories.isNotEmpty
+            ? subcategories.first
+            : null;
       }
 
+      if (!mounted) return;
       setState(() => loading = false);
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         loading = false;
         error = e.toString();
@@ -90,10 +103,17 @@ class _RecurringFormScreenState extends State<RecurringFormScreen> {
     setState(() => loading = true);
     try {
       final repo = context.read<CategoryRepository>();
-      subcategories = await repo.getSubcategories(selectedCategory!.id);
-      selectedSubcategory = subcategories.isNotEmpty ? subcategories.first : null;
+      subcategories = await repo.getAllSubcategories(
+        selectedCategory!.id,
+        includeArchived: isEdit,
+      );
+      selectedSubcategory = subcategories.isNotEmpty
+          ? subcategories.first
+          : null;
+      if (!mounted) return;
       setState(() => loading = false);
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         loading = false;
         error = e.toString();
@@ -114,24 +134,20 @@ class _RecurringFormScreenState extends State<RecurringFormScreen> {
         items: categories,
         itemLabel: (c) => c.name,
         onAddRequested: () async {
-          final name = await _nameDialog('Add Subcategory');
-          if (name == null) return null;
-
-          await context.read<CategoryRepository>().addSubcategory(
-            categoryId: selectedCategory!.id,
-            name: name,
-          );
-
-          await _reloadSubs();
-          if (subcategories.isNotEmpty) {
-            setState(() => selectedSubcategory = subcategories.last);
+          final repo = context.read<CategoryRepository>();
+          final name = await _nameDialog('Add Category');
+          if (name == null || !mounted) return null;
+          try {
+            await repo.addCategory(name);
+            final updated = await repo.getCategories();
+            if (!mounted) return null;
+            setState(() => categories = updated);
+            Navigator.pop(context);
+          } catch (e) {
+            if (mounted) _toast(e.toString());
           }
-
-          // ✅ close picker so user sees update (otherwise sheet list stays stale)
-          if (context.mounted) Navigator.pop(context);
           return null;
         },
-
       ),
     );
 
@@ -158,7 +174,7 @@ class _RecurringFormScreenState extends State<RecurringFormScreen> {
         itemLabel: (s) => s.name,
         onAddRequested: () async {
           final name = await _nameDialog('Add Subcategory');
-          if (name == null) return null;
+          if (name == null || !mounted) return null;
           await context.read<CategoryRepository>().addSubcategory(
             categoryId: selectedCategory!.id,
             name: name,
@@ -179,16 +195,26 @@ class _RecurringFormScreenState extends State<RecurringFormScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: Text(title),
-        content: TextField(controller: ctrl, decoration: const InputDecoration(hintText: 'Name')),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(hintText: 'Name'),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, ctrl.text.trim()), child: const Text('Save')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+            child: const Text('Save'),
+          ),
         ],
       ),
     );
   }
 
   Future<void> _save() async {
+    if (saving) return;
     try {
       final title = titleCtrl.text.trim();
       if (title.isEmpty) {
@@ -197,6 +223,7 @@ class _RecurringFormScreenState extends State<RecurringFormScreen> {
       }
 
       final amountMinor = rupeesToMinor(amountCtrl.text);
+      requirePositiveAmount(amountMinor);
 
       if (dayOfMonth < 1 || dayOfMonth > 31) {
         _toast('Day of month must be 1..31');
@@ -208,8 +235,11 @@ class _RecurringFormScreenState extends State<RecurringFormScreen> {
         return;
       }
 
+      setState(() => saving = true);
+      final completion = Completer<void>();
       context.read<RecurringBloc>().add(
         SaveRecurringTemplateRequested(
+          completion: completion,
           id: widget.existing?.id,
           title: title,
           amountMinor: amountMinor,
@@ -221,10 +251,13 @@ class _RecurringFormScreenState extends State<RecurringFormScreen> {
         ),
       );
 
+      await completion.future;
       if (!mounted) return;
       Navigator.pop(context);
     } catch (e) {
-      _toast('Invalid input: $e');
+      if (mounted) _toast('Could not save: $e');
+    } finally {
+      if (mounted) setState(() => saving = false);
     }
   }
 
@@ -238,109 +271,116 @@ class _RecurringFormScreenState extends State<RecurringFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    if (error != null) return Scaffold(body: Center(child: Text('Error: $error')));
+    if (loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (error != null) {
+      return Scaffold(body: Center(child: Text('Error: $error')));
+    }
 
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit Recurring' : 'Add Recurring')),
-      body: Padding(
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Title')),
-            const SizedBox(height: 12),
-            TextField(
-              controller: amountCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Amount (PKR)'),
-            ),
-            const SizedBox(height: 12),
+        children: [
+          TextField(
+            controller: titleCtrl,
+            decoration: const InputDecoration(labelText: 'Title'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: amountCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Amount (PKR)'),
+          ),
+          const SizedBox(height: 12),
 
-            SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(value: true, label: Text('Expense')),
-                ButtonSegment(value: false, label: Text('Income')),
-              ],
-              selected: {isExpense},
-              onSelectionChanged: isEdit
-                  ? null
-                  : (s) async {
-                final next = s.first;
-                if (next == isExpense) return;
-
-                setState(() {
-                  isExpense = next;
-                  // ✅ If switching to income, clear selection (optional but clean)
-                  if (!isExpense) {
-                    selectedSubcategory = null;
-                  }
-                });
-
-                // ✅ If switching to expense and you have categories, ensure subs are loaded
-                if (isExpense && selectedCategory != null) {
-                  await _reloadSubs();
-                }
-              },
-
-            ),
-
-            const SizedBox(height: 12),
-
-            Row(
-              children: [
-                const Text('Day of month:'),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Slider(
-                    value: dayOfMonth.toDouble(),
-                    min: 1,
-                    max: 31,
-                    divisions: 30,
-                    label: '$dayOfMonth',
-                    onChanged: (v) => setState(() => dayOfMonth = v.round()),
-                  ),
-                ),
-                SizedBox(width: 44, child: Text('$dayOfMonth')),
-              ],
-            ),
-
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Active'),
-              value: isActive,
-              onChanged: (v) => setState(() => isActive = v),
-            ),
-
-            if (isExpense) ...[
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Category'),
-                subtitle: Text(selectedCategory?.name ?? 'Select category'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _pickCategory,
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Subcategory'),
-                subtitle: Text(selectedSubcategory?.name ?? 'Select subcategory'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _pickSubcategory,
-              ),
-              const SizedBox(height: 8),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: true, label: Text('Expense')),
+              ButtonSegment(value: false, label: Text('Income')),
             ],
+            selected: {isExpense},
+            onSelectionChanged: isEdit
+                ? null
+                : (s) async {
+                    final next = s.first;
+                    if (next == isExpense) return;
 
-            TextField(controller: noteCtrl, decoration: const InputDecoration(labelText: 'Note (optional)')),
+                    setState(() {
+                      isExpense = next;
+                      // ✅ If switching to income, clear selection (optional but clean)
+                      if (!isExpense) {
+                        selectedSubcategory = null;
+                      }
+                    });
 
-            const Spacer(),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _save,
-                child: Text(isEdit ? 'Update' : 'Save'),
+                    // ✅ If switching to expense and you have categories, ensure subs are loaded
+                    if (isExpense && selectedCategory != null) {
+                      await _reloadSubs();
+                    }
+                  },
+          ),
+
+          const SizedBox(height: 12),
+
+          Row(
+            children: [
+              const Text('Day of month:'),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Slider(
+                  value: dayOfMonth.toDouble(),
+                  min: 1,
+                  max: 31,
+                  divisions: 30,
+                  label: '$dayOfMonth',
+                  onChanged: (v) => setState(() => dayOfMonth = v.round()),
+                ),
               ),
+              SizedBox(width: 44, child: Text('$dayOfMonth')),
+            ],
+          ),
+
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Active'),
+            value: isActive,
+            onChanged: (v) => setState(() => isActive = v),
+          ),
+
+          if (isExpense) ...[
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Category'),
+              subtitle: Text(selectedCategory?.name ?? 'Select category'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _pickCategory,
             ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Subcategory'),
+              subtitle: Text(selectedSubcategory?.name ?? 'Select subcategory'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _pickSubcategory,
+            ),
+            const SizedBox(height: 8),
           ],
-        ),
+
+          TextField(
+            controller: noteCtrl,
+            decoration: const InputDecoration(labelText: 'Note (optional)'),
+          ),
+
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: saving ? null : _save,
+              child: Text(isEdit ? 'Update' : 'Save'),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -360,10 +400,12 @@ class _SearchPickerBottomSheet<T> extends StatefulWidget {
   final Future<T?> Function() onAddRequested;
 
   @override
-  State<_SearchPickerBottomSheet<T>> createState() => _SearchPickerBottomSheetState<T>();
+  State<_SearchPickerBottomSheet<T>> createState() =>
+      _SearchPickerBottomSheetState<T>();
 }
 
-class _SearchPickerBottomSheetState<T> extends State<_SearchPickerBottomSheet<T>> {
+class _SearchPickerBottomSheetState<T>
+    extends State<_SearchPickerBottomSheet<T>> {
   final searchCtrl = TextEditingController();
   late List<T> filtered;
 
@@ -379,7 +421,9 @@ class _SearchPickerBottomSheetState<T> extends State<_SearchPickerBottomSheet<T>
     setState(() {
       filtered = q.isEmpty
           ? widget.items
-          : widget.items.where((x) => widget.itemLabel(x).toLowerCase().contains(q)).toList();
+          : widget.items
+                .where((x) => widget.itemLabel(x).toLowerCase().contains(q))
+                .toList();
     });
   }
 
@@ -404,7 +448,12 @@ class _SearchPickerBottomSheetState<T> extends State<_SearchPickerBottomSheet<T>
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                 child: Row(
                   children: [
-                    Expanded(child: Text(widget.title, style: const TextStyle(fontWeight: FontWeight.bold))),
+                    Expanded(
+                      child: Text(
+                        widget.title,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
                     TextButton.icon(
                       onPressed: () async => await widget.onAddRequested(),
                       icon: const Icon(Icons.add),
@@ -427,7 +476,7 @@ class _SearchPickerBottomSheetState<T> extends State<_SearchPickerBottomSheet<T>
               Expanded(
                 child: ListView.separated(
                   itemCount: filtered.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (_, i) {
                     final item = filtered[i];
                     return ListTile(
