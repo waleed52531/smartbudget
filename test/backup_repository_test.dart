@@ -37,7 +37,7 @@ void main() {
   Future<dynamic> tables() async => (await repo.exportPayload())['tables'];
 
   for (final mode in RestoreMode.values) {
-    for (final version in [2, 3]) {
+    for (final version in [2, 3, 4]) {
       test('schema $version backup restores idempotently with $mode', () async {
         final payload = await repo.exportPayload();
         payload['schemaVersion'] = version;

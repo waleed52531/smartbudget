@@ -1,0 +1,35 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "smartbudget-561d4",
+          "appId": "1:463515242262:android:066c564503b6ba967e0a37",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "smartbudget-561d4",
+          "configurations": {
+            "android": "1:463515242262:android:066c564503b6ba967e0a37"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "authorization",
+      "runtime": "nodejs22",
+      "ignore": ["node_modules", ".git", "**/*.log", ".env*", ".secret*", "**/*.pem", "**/*.key", "test", "tools", "lib/test"],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
+    }
+  ],
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}

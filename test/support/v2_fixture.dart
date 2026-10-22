@@ -29,7 +29,7 @@ void createV2Fixture(File file, {String? extraSql}) {
     ''');
     if (extraSql != null) db.execute(extraSql);
   } finally {
-    db.dispose();
+    db.close();
   }
 }
 
@@ -44,6 +44,6 @@ Map<String, List<Map<String, Object?>>> snapshot(File file) {
             .toList(),
     };
   } finally {
-    db.dispose();
+    db.close();
   }
 }

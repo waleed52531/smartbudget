@@ -1,125 +1,49 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-
-import 'core/app_shell.dart';
-import 'core/db/app_db.dart';
-import 'core/state/month_cubit.dart';
-import 'core/utils/month_id.dart';
-
-import 'features/backup/data/backup_repository.dart';
-import 'features/backup/presentaion/bloc/backup_bloc.dart';
-
-import 'features/budget/data/budget_repository.dart';
-import 'features/budget/presentation/bloc/budget_bloc.dart';
-
-import 'features/categories/data/category_repository.dart';
-
-import 'features/dashboard/data/dashboard_repository.dart';
-import 'features/dashboard/presentation/bloc/dashboard_bloc.dart';
-
-import 'features/recurring/data/recurring_repository.dart';
-import 'features/recurring/presentation/bloc/recurring_bloc.dart';
-
-import 'features/reports/data/export_repository.dart';
-import 'features/reports/data/reports_repository.dart';
-import 'features/reports/presentation/bloc/export_bloc.dart';
-import 'features/reports/presentation/reportsbloc/reports_bloc.dart';
-
-import 'features/transactions/data/transaction_repository.dart';
-import 'features/transactions/bloc/tranasaction_bloc.dart';
+import 'core/user_storage/database_key_vault.dart';
+import 'core/user_storage/encrypted_database_factory.dart';
+import 'core/user_storage/user_database_manager.dart';
+import 'features/auth/data/firebase_session_services.dart';
+import 'features/auth/data/session_environment.dart';
+import 'features/auth/data/session_vault.dart';
+import 'features/auth/domain/lease_verifier.dart';
+import 'features/auth/presentation/session_app.dart';
+import 'features/auth/presentation/session_cubit.dart';
+import 'core/legacy_migration/legacy_migration_service.dart';
+import 'core/legacy_migration/ownership_grant.dart';
+import 'features/auth/data/authorization_gateway.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  final db = AppDatabase();
-  await db.seedDefaultsIfEmpty();
-
-  runApp(MonthlyBudgetApp(db: db));
-}
-
-class MonthlyBudgetApp extends StatelessWidget {
-  const MonthlyBudgetApp({super.key, required this.db});
-  final AppDatabase db;
-
-  @override
-  Widget build(BuildContext context) {
-    return MultiRepositoryProvider(
-      providers: [
-        // ✅ This is what enables: context.read<AppDatabase>()
-        RepositoryProvider<AppDatabase>.value(value: db),
-
-        RepositoryProvider<CategoryRepository>(
-          create: (_) => CategoryRepository(db),
-        ),
-        RepositoryProvider<TransactionRepository>(
-          create: (_) => TransactionRepository(db),
-        ),
-        RepositoryProvider<BudgetRepository>(
-          create: (_) => BudgetRepository(db),
-        ),
-        RepositoryProvider<DashboardRepository>(
-          create: (_) => DashboardRepository(db),
-        ),
-        RepositoryProvider<ExportRepository>(
-          create: (_) => ExportRepository(db),
-        ),
-        RepositoryProvider<ReportsRepository>(
-          create: (_) => ReportsRepository(db),
-        ),
-        RepositoryProvider<RecurringRepository>(
-          create: (_) => RecurringRepository(db),
-        ),
-        RepositoryProvider<BackupRepository>(
-          create: (_) => BackupRepository(db),
-        ),
-      ],
-      child: MultiBlocProvider(
-        providers: [
-          // ✅ Month cubit should exist globally
-          BlocProvider<MonthCubit>(
-            create: (_) => MonthCubit(currentMonthId()),
+  try {
+    final environment = SessionEnvironment.fromBuild();
+    final services = await FirebaseSessionServices.initialize(environment);
+    late UserDatabaseManager userStorage;
+    runApp(
+      AuthSessionApp(
+        createSession: () => SessionCubit(
+          storageFactory: (authority) => userStorage = UserDatabaseManager(
+            authority: authority,
+            factory: EncryptedDatabaseFactory(platformDatabaseKeyVault()),
           ),
-
-          BlocProvider<TransactionBloc>(
-            create: (ctx) => TransactionBloc(ctx.read<TransactionRepository>()),
+          auth: services.auth,
+          authorization: services.authorization,
+          vault: SessionVault(PlatformProtectedStore(environment.projectId)),
+          clock: PlatformSessionClock(),
+          verifier: LeaseVerifier(
+            projectId: environment.projectId,
+            policyVersion: environment.policyVersion,
           ),
-
-          BlocProvider<BudgetBloc>(
-            create: (ctx) => BudgetBloc(
-              budgetRepo: ctx.read<BudgetRepository>(),
-              categoryRepo: ctx.read<CategoryRepository>(),
-            ),
+        ),
+        createLegacyMigration: () => LegacyMigrationService(
+          manager: userStorage,
+          ownership: OwnershipGrantVerifier(
+            () => fetchVerificationKeys(environment.keysEndpoint),
           ),
-
-          BlocProvider<DashboardBloc>(
-            create: (ctx) => DashboardBloc(ctx.read<DashboardRepository>()),
-          ),
-
-          BlocProvider<ExportBloc>(
-            create: (ctx) => ExportBloc(repo: ctx.read<ExportRepository>()),
-          ),
-
-          BlocProvider<RecurringBloc>(
-            create: (ctx) => RecurringBloc(repo: ctx.read<RecurringRepository>()),
-          ),
-
-          BlocProvider<BackupBloc>(
-            create: (ctx) => BackupBloc(repo: ctx.read<BackupRepository>()),
-          ),
-
-          BlocProvider<ReportsBloc>(
-            create: (ctx) => ReportsBloc(
-              reportsRepo: ctx.read<ReportsRepository>(),
-              budgetRepo: ctx.read<BudgetRepository>(),
-            ),
-          ),
-        ],
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true),
-          home: const AppShell(),
         ),
       ),
     );
+  } catch (_) {
+    // Configuration/initialization failure must never mount financial providers.
+    runApp(const SessionUnavailableApp());
   }
 }

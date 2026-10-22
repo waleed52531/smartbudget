@@ -36,8 +36,15 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_bloc: ^9.1.1
   equatable: ^2.0.8
-  drift: ^2.30.1
-  sqlite3_flutter_libs: ^0.5.41
+  firebase_core: ^5.0.0
+  firebase_auth: ^7.0.0
+  cloud_functions: ^7.0.0
+  firebase_app_check: ^0.5.0
+  cryptography: ^2.9.0
+  crypto: ^3.0.7
+  flutter_secure_storage: ^10.3.4
+  drift: ^2.35.2
+  sqlite3: '>=3.5.2 <3.6.0'
   path_provider: ^2.1.5
   path: ^1.9.1
   intl: ^0.20.2
@@ -60,8 +67,13 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   build_runner: ^2.10.5
-  drift_dev: ^2.30.1
-  sqlite3: ^2.9.4
+  drift_dev: ^2.35.1
+
+# Package the encryption-capable engine on every native target.
+hooks:
+  user_defines:
+    sqlite3:
+      source: sqlite3mc
 
 flutter_launcher_icons:
   android: true
@@ -76,6 +88,9 @@ flutter_launcher_icons:
 
 # The following section is specific to Flutter packages.
 flutter:
+  # Retain the approved CocoaPods foundation; avoid automatic SwiftPM migration.
+  config:
+    enable-swift-package-manager: false
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

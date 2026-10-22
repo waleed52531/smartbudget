@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "smartbudget-authorization",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-19",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": true,
+  "preview_urls": false,
+  "send_metrics": false,
+  "observability": {
+    "enabled": false,
+    "logs": {
+      "enabled": false,
+      "invocation_logs": false
+    }
+  },
+  "vars": {
+    "AUTH_EXPECTED_PROJECT": "smartbudget-561d4",
+    "AUTH_PROJECT_NUMBER": "463515242262",
+    "AUTH_ANDROID_APP_ID": "1:463515242262:android:066c564503b6ba967e0a37",
+    "AUTH_SERVICE_ACCOUNT": "smartbudget-authz@smartbudget-561d4.iam.gserviceaccount.com",
+    "AUTH_LEASE_TTL_SECONDS": "86400",
+    "AUTH_POLICY_VERSION": "1",
+    "AUTH_SIGNING_KEY_ID": "beta-20261022-01",
+    "AUTH_PUBLIC_KEY_SET_JSON": "{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"9zV9RPCqLeYemTW9OgImNXsOvWNy1KgD1x_SISS_8W0\",\"kid\":\"beta-20261022-01\",\"alg\":\"EdDSA\",\"use\":\"sig\"}]}"
+  },
+  "account_id": "001fb786fa0e7bf85a8e9153e2837e5b"
+}

@@ -1,0 +1,30 @@
+{
+  "projectId": "demo-smartbudget-authz",
+  "uid": "synthetic-user",
+  "secondUid": "synthetic-second",
+  "installationId": "12345678-1234-4234-8234-123456789abc",
+  "now": 1800000000,
+  "keys": {
+    "keys": [
+      {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "DZ5F5JfklD7r5-U-7MisRAAsceTt6FxwQCu7r7CSSXs",
+        "kid": "first",
+        "alg": "EdDSA",
+        "use": "sig"
+      },
+      {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "QdNOzlaC2U_WsiLGgdTxf_e8kQBxVbGRLFZqVHkJ1fY",
+        "kid": "second",
+        "alg": "EdDSA",
+        "use": "sig"
+      }
+    ]
+  },
+  "lease": "eyJhbGciOiJFZERTQSIsInR5cCI6InNiLWF1dGgtbGVhc2Urand0Iiwia2lkIjoiZmlyc3QifQ.eyJpc3MiOiJzbWFydGJ1ZGdldDpkZW1vLXNtYXJ0YnVkZ2V0LWF1dGh6OmF1dGhvcml6YXRpb24iLCJhdWQiOiJkZW1vLXNtYXJ0YnVkZ2V0LWF1dGh6IiwicHJvamVjdF9pZCI6ImRlbW8tc21hcnRidWRnZXQtYXV0aHoiLCJzdWIiOiJzeW50aGV0aWMtdXNlciIsImluc3RhbGxhdGlvbl9pZCI6IjEyMzQ1Njc4LTEyMzQtNDIzNC04MjM0LTEyMzQ1Njc4OWFiYyIsImlhdCI6MTgwMDAwMDAwMCwiZXhwIjoxODAwMDg2NDAwLCJwb2xpY3lfdmVyc2lvbiI6MSwianRpIjoic3ludGhldGljLWNyb3NzLWxhbmd1YWdlLXZlY3RvciJ9.NwpE8-0pzYdT-YPNJuT_Ugktu9ur4MNA4US3xtnuzSU6qAPwgaVb9ahRrvrpjpMEQ6-UFopqdGjRkTHPAQYIBg",
+  "rotatedLease": "eyJhbGciOiJFZERTQSIsInR5cCI6InNiLWF1dGgtbGVhc2Urand0Iiwia2lkIjoic2Vjb25kIn0.eyJpc3MiOiJzbWFydGJ1ZGdldDpkZW1vLXNtYXJ0YnVkZ2V0LWF1dGh6OmF1dGhvcml6YXRpb24iLCJhdWQiOiJkZW1vLXNtYXJ0YnVkZ2V0LWF1dGh6IiwicHJvamVjdF9pZCI6ImRlbW8tc21hcnRidWRnZXQtYXV0aHoiLCJzdWIiOiJzeW50aGV0aWMtdXNlciIsImluc3RhbGxhdGlvbl9pZCI6IjEyMzQ1Njc4LTEyMzQtNDIzNC04MjM0LTEyMzQ1Njc4OWFiYyIsImlhdCI6MTgwMDAwMDAwMCwiZXhwIjoxODAwMDg2NDAwLCJwb2xpY3lfdmVyc2lvbiI6MSwianRpIjoic3ludGhldGljLWNyb3NzLWxhbmd1YWdlLXZlY3RvciJ9.q471_mQXm32SdkWvZ6TYROTOnqaHE77e80lr1Mmphnei-8po865uBkkpgJJS4DkW9jVBsP8yRQ7IsRKWs6bCBA",
+  "secondUserLease": "eyJhbGciOiJFZERTQSIsInR5cCI6InNiLWF1dGgtbGVhc2Urand0Iiwia2lkIjoiZmlyc3QifQ.eyJpc3MiOiJzbWFydGJ1ZGdldDpkZW1vLXNtYXJ0YnVkZ2V0LWF1dGh6OmF1dGhvcml6YXRpb24iLCJhdWQiOiJkZW1vLXNtYXJ0YnVkZ2V0LWF1dGh6IiwicHJvamVjdF9pZCI6ImRlbW8tc21hcnRidWRnZXQtYXV0aHoiLCJzdWIiOiJzeW50aGV0aWMtc2Vjb25kIiwiaW5zdGFsbGF0aW9uX2lkIjoiMTIzNDU2NzgtMTIzNC00MjM0LTgyMzQtMTIzNDU2Nzg5YWJjIiwiaWF0IjoxODAwMDAwMDAwLCJleHAiOjE4MDAwODY0MDAsInBvbGljeV92ZXJzaW9uIjoxLCJqdGkiOiJzeW50aGV0aWMtY3Jvc3MtbGFuZ3VhZ2UtdmVjdG9yIn0.GFBwplpk9w2-mkyNwajg9kLxqDHZzzNRudTd81F1HmAaC0ozVZ_UpRDiFYSz4hx_gvgmcKE179rsB0AUYFVqDg"
+}

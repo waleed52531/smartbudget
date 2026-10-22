@@ -43,3 +43,36 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/.kotlin/
+
+# Local backend dependencies, outputs, credentials and emulator artifacts.
+/functions/node_modules/
+/functions/lib/
+/functions/.env
+/functions/.env.*
+!/functions/.env.example
+/functions/.secret.local
+/.firebase/
+*-debug.log*
+*.pem
+*.key
+
+# Free authorization Worker: dependencies, generated output and local secrets.
+/workers/authorization/node_modules/
+/workers/authorization/dist/
+/workers/authorization/.wrangler/
+/workers/authorization/.dev.vars*
+/workers/authorization/.env*
+!/workers/authorization/.env.example
+/workers/authorization/wrangler.local.jsonc
+/postman/.dependencies/
+/postman/*.ndjson
+
+# Never commit financial databases, encrypted databases or key envelopes.
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+key.envelope.json

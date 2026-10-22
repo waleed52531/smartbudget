@@ -1,0 +1,5 @@
+simulation: smartbudget-authorization-key-outage
+routing: path
+mocks:
+  - routeKey: google-keys
+    path: ../mocks/firebase-keys-outage.js

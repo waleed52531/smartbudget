@@ -2695,6 +2695,305 @@ class RecurringAppliedCompanion extends UpdateCompanion<RecurringAppliedRow> {
   }
 }
 
+class $DatabaseOwnershipTable extends DatabaseOwnership
+    with TableInfo<$DatabaseOwnershipTable, DatabaseOwnershipData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DatabaseOwnershipTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    check: () => const CustomExpression<bool>('id = 1'),
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _projectIdMeta = const VerificationMeta(
+    'projectId',
+  );
+  @override
+  late final GeneratedColumn<String> projectId = GeneratedColumn<String>(
+    'project_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _uidMeta = const VerificationMeta('uid');
+  @override
+  late final GeneratedColumn<String> uid = GeneratedColumn<String>(
+    'uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _databaseIdMeta = const VerificationMeta(
+    'databaseId',
+  );
+  @override
+  late final GeneratedColumn<String> databaseId = GeneratedColumn<String>(
+    'database_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, projectId, uid, databaseId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'database_ownership';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DatabaseOwnershipData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('project_id')) {
+      context.handle(
+        _projectIdMeta,
+        projectId.isAcceptableOrUnknown(data['project_id']!, _projectIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_projectIdMeta);
+    }
+    if (data.containsKey('uid')) {
+      context.handle(
+        _uidMeta,
+        uid.isAcceptableOrUnknown(data['uid']!, _uidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_uidMeta);
+    }
+    if (data.containsKey('database_id')) {
+      context.handle(
+        _databaseIdMeta,
+        databaseId.isAcceptableOrUnknown(data['database_id']!, _databaseIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_databaseIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  DatabaseOwnershipData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DatabaseOwnershipData(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      projectId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}project_id'],
+      )!,
+      uid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}uid'],
+      )!,
+      databaseId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}database_id'],
+      )!,
+    );
+  }
+
+  @override
+  $DatabaseOwnershipTable createAlias(String alias) {
+    return $DatabaseOwnershipTable(attachedDatabase, alias);
+  }
+}
+
+class DatabaseOwnershipData extends DataClass
+    implements Insertable<DatabaseOwnershipData> {
+  final int id;
+  final String projectId;
+  final String uid;
+  final String databaseId;
+  const DatabaseOwnershipData({
+    required this.id,
+    required this.projectId,
+    required this.uid,
+    required this.databaseId,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['project_id'] = Variable<String>(projectId);
+    map['uid'] = Variable<String>(uid);
+    map['database_id'] = Variable<String>(databaseId);
+    return map;
+  }
+
+  DatabaseOwnershipCompanion toCompanion(bool nullToAbsent) {
+    return DatabaseOwnershipCompanion(
+      id: Value(id),
+      projectId: Value(projectId),
+      uid: Value(uid),
+      databaseId: Value(databaseId),
+    );
+  }
+
+  factory DatabaseOwnershipData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DatabaseOwnershipData(
+      id: serializer.fromJson<int>(json['id']),
+      projectId: serializer.fromJson<String>(json['projectId']),
+      uid: serializer.fromJson<String>(json['uid']),
+      databaseId: serializer.fromJson<String>(json['databaseId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'projectId': serializer.toJson<String>(projectId),
+      'uid': serializer.toJson<String>(uid),
+      'databaseId': serializer.toJson<String>(databaseId),
+    };
+  }
+
+  DatabaseOwnershipData copyWith({
+    int? id,
+    String? projectId,
+    String? uid,
+    String? databaseId,
+  }) => DatabaseOwnershipData(
+    id: id ?? this.id,
+    projectId: projectId ?? this.projectId,
+    uid: uid ?? this.uid,
+    databaseId: databaseId ?? this.databaseId,
+  );
+  DatabaseOwnershipData copyWithCompanion(DatabaseOwnershipCompanion data) {
+    return DatabaseOwnershipData(
+      id: data.id.present ? data.id.value : this.id,
+      projectId: data.projectId.present ? data.projectId.value : this.projectId,
+      uid: data.uid.present ? data.uid.value : this.uid,
+      databaseId: data.databaseId.present
+          ? data.databaseId.value
+          : this.databaseId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DatabaseOwnershipData(')
+          ..write('id: $id, ')
+          ..write('projectId: $projectId, ')
+          ..write('uid: $uid, ')
+          ..write('databaseId: $databaseId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, projectId, uid, databaseId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DatabaseOwnershipData &&
+          other.id == this.id &&
+          other.projectId == this.projectId &&
+          other.uid == this.uid &&
+          other.databaseId == this.databaseId);
+}
+
+class DatabaseOwnershipCompanion
+    extends UpdateCompanion<DatabaseOwnershipData> {
+  final Value<int> id;
+  final Value<String> projectId;
+  final Value<String> uid;
+  final Value<String> databaseId;
+  const DatabaseOwnershipCompanion({
+    this.id = const Value.absent(),
+    this.projectId = const Value.absent(),
+    this.uid = const Value.absent(),
+    this.databaseId = const Value.absent(),
+  });
+  DatabaseOwnershipCompanion.insert({
+    this.id = const Value.absent(),
+    required String projectId,
+    required String uid,
+    required String databaseId,
+  }) : projectId = Value(projectId),
+       uid = Value(uid),
+       databaseId = Value(databaseId);
+  static Insertable<DatabaseOwnershipData> custom({
+    Expression<int>? id,
+    Expression<String>? projectId,
+    Expression<String>? uid,
+    Expression<String>? databaseId,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (projectId != null) 'project_id': projectId,
+      if (uid != null) 'uid': uid,
+      if (databaseId != null) 'database_id': databaseId,
+    });
+  }
+
+  DatabaseOwnershipCompanion copyWith({
+    Value<int>? id,
+    Value<String>? projectId,
+    Value<String>? uid,
+    Value<String>? databaseId,
+  }) {
+    return DatabaseOwnershipCompanion(
+      id: id ?? this.id,
+      projectId: projectId ?? this.projectId,
+      uid: uid ?? this.uid,
+      databaseId: databaseId ?? this.databaseId,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (projectId.present) {
+      map['project_id'] = Variable<String>(projectId.value);
+    }
+    if (uid.present) {
+      map['uid'] = Variable<String>(uid.value);
+    }
+    if (databaseId.present) {
+      map['database_id'] = Variable<String>(databaseId.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DatabaseOwnershipCompanion(')
+          ..write('id: $id, ')
+          ..write('projectId: $projectId, ')
+          ..write('uid: $uid, ')
+          ..write('databaseId: $databaseId')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2707,6 +3006,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $RecurringAppliedTable recurringApplied = $RecurringAppliedTable(
     this,
   );
+  late final $DatabaseOwnershipTable databaseOwnership =
+      $DatabaseOwnershipTable(this);
   late final Index categoryNames = Index(
     'category_names',
     'CREATE UNIQUE INDEX category_names ON category_nodes (name) WHERE type = \'category\'',
@@ -2722,6 +3023,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     transactions,
     recurringTemplates,
     recurringApplied,
+    databaseOwnership,
     categoryNames,
   ];
   @override
@@ -2783,10 +3085,9 @@ final class $$CategoryNodesTableReferences
     super.$_typedResult,
   );
 
-  static $CategoryNodesTable _parentIdTable(_$AppDatabase db) =>
-      db.categoryNodes.createAlias(
-        $_aliasNameGenerator(db.categoryNodes.parentId, db.categoryNodes.id),
-      );
+  static $CategoryNodesTable _parentIdTable(_$AppDatabase db) => db
+      .categoryNodes
+      .createAlias('category_nodes__parent_id__category_nodes__id');
 
   $$CategoryNodesTableProcessedTableManager? get parentId {
     final $_column = $_itemColumn<String>('parent_id');
@@ -2805,10 +3106,7 @@ final class $$CategoryNodesTableReferences
   static MultiTypedResultKey<$BudgetLimitsTable, List<BudgetLimit>>
   _budgetLimitsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.budgetLimits,
-    aliasName: $_aliasNameGenerator(
-      db.categoryNodes.id,
-      db.budgetLimits.nodeId,
-    ),
+    aliasName: 'category_nodes__id__budget_limits__node_id',
   );
 
   $$BudgetLimitsTableProcessedTableManager get budgetLimitsRefs {
@@ -2826,10 +3124,7 @@ final class $$CategoryNodesTableReferences
   static MultiTypedResultKey<$TransactionsTable, List<Transaction>>
   _transactionsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.transactions,
-    aliasName: $_aliasNameGenerator(
-      db.categoryNodes.id,
-      db.transactions.subcategoryId,
-    ),
+    aliasName: 'category_nodes__id__transactions__subcategory_id',
   );
 
   $$TransactionsTableProcessedTableManager get transactionsRefs {
@@ -2848,10 +3143,7 @@ final class $$CategoryNodesTableReferences
   _recurringTemplatesRefsTable(_$AppDatabase db) =>
       MultiTypedResultKey.fromTable(
         db.recurringTemplates,
-        aliasName: $_aliasNameGenerator(
-          db.categoryNodes.id,
-          db.recurringTemplates.subcategoryId,
-        ),
+        aliasName: 'category_nodes__id__recurring_templates__subcategory_id',
       );
 
   $$RecurringTemplatesTableProcessedTableManager get recurringTemplatesRefs {
@@ -3288,7 +3580,7 @@ class $$CategoryNodesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$CategoryNodesTable, CategoryNode>(table),
                   $$CategoryNodesTableReferences(db, table, e),
                 ),
               )
@@ -3459,10 +3751,7 @@ final class $$BudgetMonthsTableReferences
   static MultiTypedResultKey<$BudgetLimitsTable, List<BudgetLimit>>
   _budgetLimitsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.budgetLimits,
-    aliasName: $_aliasNameGenerator(
-      db.budgetMonths.id,
-      db.budgetLimits.budgetMonthId,
-    ),
+    aliasName: 'budget_months__id__budget_limits__budget_month_id',
   );
 
   $$BudgetLimitsTableProcessedTableManager get budgetLimitsRefs {
@@ -3688,7 +3977,7 @@ class $$BudgetMonthsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$BudgetMonthsTable, BudgetMonth>(table),
                   $$BudgetMonthsTableReferences(db, table, e),
                 ),
               )
@@ -3764,10 +4053,9 @@ final class $$BudgetLimitsTableReferences
     extends BaseReferences<_$AppDatabase, $BudgetLimitsTable, BudgetLimit> {
   $$BudgetLimitsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $BudgetMonthsTable _budgetMonthIdTable(_$AppDatabase db) =>
-      db.budgetMonths.createAlias(
-        $_aliasNameGenerator(db.budgetLimits.budgetMonthId, db.budgetMonths.id),
-      );
+  static $BudgetMonthsTable _budgetMonthIdTable(_$AppDatabase db) => db
+      .budgetMonths
+      .createAlias('budget_limits__budget_month_id__budget_months__id');
 
   $$BudgetMonthsTableProcessedTableManager get budgetMonthId {
     final $_column = $_itemColumn<String>('budget_month_id')!;
@@ -3783,10 +4071,8 @@ final class $$BudgetLimitsTableReferences
     );
   }
 
-  static $CategoryNodesTable _nodeIdTable(_$AppDatabase db) =>
-      db.categoryNodes.createAlias(
-        $_aliasNameGenerator(db.budgetLimits.nodeId, db.categoryNodes.id),
-      );
+  static $CategoryNodesTable _nodeIdTable(_$AppDatabase db) => db.categoryNodes
+      .createAlias('budget_limits__node_id__category_nodes__id');
 
   $$CategoryNodesTableProcessedTableManager get nodeId {
     final $_column = $_itemColumn<String>('node_id')!;
@@ -4056,7 +4342,7 @@ class $$BudgetLimitsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$BudgetLimitsTable, BudgetLimit>(table),
                   $$BudgetLimitsTableReferences(db, table, e),
                 ),
               )
@@ -4164,13 +4450,9 @@ final class $$TransactionsTableReferences
     extends BaseReferences<_$AppDatabase, $TransactionsTable, Transaction> {
   $$TransactionsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $CategoryNodesTable _subcategoryIdTable(_$AppDatabase db) =>
-      db.categoryNodes.createAlias(
-        $_aliasNameGenerator(
-          db.transactions.subcategoryId,
-          db.categoryNodes.id,
-        ),
-      );
+  static $CategoryNodesTable _subcategoryIdTable(_$AppDatabase db) => db
+      .categoryNodes
+      .createAlias('transactions__subcategory_id__category_nodes__id');
 
   $$CategoryNodesTableProcessedTableManager? get subcategoryId {
     final $_column = $_itemColumn<String>('subcategory_id');
@@ -4471,7 +4753,7 @@ class $$TransactionsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$TransactionsTable, Transaction>(table),
                   $$TransactionsTableReferences(db, table, e),
                 ),
               )
@@ -4575,13 +4857,9 @@ final class $$RecurringTemplatesTableReferences
     super.$_typedResult,
   );
 
-  static $CategoryNodesTable _subcategoryIdTable(_$AppDatabase db) =>
-      db.categoryNodes.createAlias(
-        $_aliasNameGenerator(
-          db.recurringTemplates.subcategoryId,
-          db.categoryNodes.id,
-        ),
-      );
+  static $CategoryNodesTable _subcategoryIdTable(_$AppDatabase db) => db
+      .categoryNodes
+      .createAlias('recurring_templates__subcategory_id__category_nodes__id');
 
   $$CategoryNodesTableProcessedTableManager? get subcategoryId {
     final $_column = $_itemColumn<String>('subcategory_id');
@@ -4600,10 +4878,7 @@ final class $$RecurringTemplatesTableReferences
   static MultiTypedResultKey<$RecurringAppliedTable, List<RecurringAppliedRow>>
   _recurringAppliedRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.recurringApplied,
-    aliasName: $_aliasNameGenerator(
-      db.recurringTemplates.id,
-      db.recurringApplied.templateId,
-    ),
+    aliasName: 'recurring_templates__id__recurring_applied__template_id',
   );
 
   $$RecurringAppliedTableProcessedTableManager get recurringAppliedRefs {
@@ -4965,7 +5240,9 @@ class $$RecurringTemplatesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$RecurringTemplatesTable, RecurringTemplate>(
+                    table,
+                  ),
                   $$RecurringTemplatesTableReferences(db, table, e),
                 ),
               )
@@ -5084,13 +5361,9 @@ final class $$RecurringAppliedTableReferences
     super.$_typedResult,
   );
 
-  static $RecurringTemplatesTable _templateIdTable(_$AppDatabase db) =>
-      db.recurringTemplates.createAlias(
-        $_aliasNameGenerator(
-          db.recurringApplied.templateId,
-          db.recurringTemplates.id,
-        ),
-      );
+  static $RecurringTemplatesTable _templateIdTable(_$AppDatabase db) => db
+      .recurringTemplates
+      .createAlias('recurring_applied__template_id__recurring_templates__id');
 
   $$RecurringTemplatesTableProcessedTableManager get templateId {
     final $_column = $_itemColumn<String>('template_id')!;
@@ -5303,7 +5576,9 @@ class $$RecurringAppliedTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$RecurringAppliedTable, RecurringAppliedRow>(
+                    table,
+                  ),
                   $$RecurringAppliedTableReferences(db, table, e),
                 ),
               )
@@ -5369,6 +5644,207 @@ typedef $$RecurringAppliedTableProcessedTableManager =
       RecurringAppliedRow,
       PrefetchHooks Function({bool templateId})
     >;
+typedef $$DatabaseOwnershipTableCreateCompanionBuilder =
+    DatabaseOwnershipCompanion Function({
+      Value<int> id,
+      required String projectId,
+      required String uid,
+      required String databaseId,
+    });
+typedef $$DatabaseOwnershipTableUpdateCompanionBuilder =
+    DatabaseOwnershipCompanion Function({
+      Value<int> id,
+      Value<String> projectId,
+      Value<String> uid,
+      Value<String> databaseId,
+    });
+
+class $$DatabaseOwnershipTableFilterComposer
+    extends Composer<_$AppDatabase, $DatabaseOwnershipTable> {
+  $$DatabaseOwnershipTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get projectId => $composableBuilder(
+    column: $table.projectId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get uid => $composableBuilder(
+    column: $table.uid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get databaseId => $composableBuilder(
+    column: $table.databaseId,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DatabaseOwnershipTableOrderingComposer
+    extends Composer<_$AppDatabase, $DatabaseOwnershipTable> {
+  $$DatabaseOwnershipTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get projectId => $composableBuilder(
+    column: $table.projectId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get uid => $composableBuilder(
+    column: $table.uid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get databaseId => $composableBuilder(
+    column: $table.databaseId,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DatabaseOwnershipTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DatabaseOwnershipTable> {
+  $$DatabaseOwnershipTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get projectId =>
+      $composableBuilder(column: $table.projectId, builder: (column) => column);
+
+  GeneratedColumn<String> get uid =>
+      $composableBuilder(column: $table.uid, builder: (column) => column);
+
+  GeneratedColumn<String> get databaseId => $composableBuilder(
+    column: $table.databaseId,
+    builder: (column) => column,
+  );
+}
+
+class $$DatabaseOwnershipTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DatabaseOwnershipTable,
+          DatabaseOwnershipData,
+          $$DatabaseOwnershipTableFilterComposer,
+          $$DatabaseOwnershipTableOrderingComposer,
+          $$DatabaseOwnershipTableAnnotationComposer,
+          $$DatabaseOwnershipTableCreateCompanionBuilder,
+          $$DatabaseOwnershipTableUpdateCompanionBuilder,
+          (
+            DatabaseOwnershipData,
+            BaseReferences<
+              _$AppDatabase,
+              $DatabaseOwnershipTable,
+              DatabaseOwnershipData
+            >,
+          ),
+          DatabaseOwnershipData,
+          PrefetchHooks Function()
+        > {
+  $$DatabaseOwnershipTableTableManager(
+    _$AppDatabase db,
+    $DatabaseOwnershipTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DatabaseOwnershipTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DatabaseOwnershipTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DatabaseOwnershipTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> projectId = const Value.absent(),
+                Value<String> uid = const Value.absent(),
+                Value<String> databaseId = const Value.absent(),
+              }) => DatabaseOwnershipCompanion(
+                id: id,
+                projectId: projectId,
+                uid: uid,
+                databaseId: databaseId,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String projectId,
+                required String uid,
+                required String databaseId,
+              }) => DatabaseOwnershipCompanion.insert(
+                id: id,
+                projectId: projectId,
+                uid: uid,
+                databaseId: databaseId,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$DatabaseOwnershipTable, DatabaseOwnershipData>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $DatabaseOwnershipTable,
+                    DatabaseOwnershipData
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DatabaseOwnershipTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DatabaseOwnershipTable,
+      DatabaseOwnershipData,
+      $$DatabaseOwnershipTableFilterComposer,
+      $$DatabaseOwnershipTableOrderingComposer,
+      $$DatabaseOwnershipTableAnnotationComposer,
+      $$DatabaseOwnershipTableCreateCompanionBuilder,
+      $$DatabaseOwnershipTableUpdateCompanionBuilder,
+      (
+        DatabaseOwnershipData,
+        BaseReferences<
+          _$AppDatabase,
+          $DatabaseOwnershipTable,
+          DatabaseOwnershipData
+        >,
+      ),
+      DatabaseOwnershipData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -5385,4 +5861,6 @@ class $AppDatabaseManager {
       $$RecurringTemplatesTableTableManager(_db, _db.recurringTemplates);
   $$RecurringAppliedTableTableManager get recurringApplied =>
       $$RecurringAppliedTableTableManager(_db, _db.recurringApplied);
+  $$DatabaseOwnershipTableTableManager get databaseOwnership =>
+      $$DatabaseOwnershipTableTableManager(_db, _db.databaseOwnership);
 }

@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Authorization metadata is exclusively accessed through trusted Admin SDKs.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

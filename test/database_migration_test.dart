@@ -36,8 +36,8 @@ void main() {
       expect(snapshot(file), before);
       expect(snapshot(backup), before);
       final raw = sqlite3.open(file.path, mode: OpenMode.readOnly);
-      expect(raw.userVersion, 3);
-      raw.dispose();
+      expect(raw.userVersion, 4);
+      raw.close();
       db = AppDatabase.withExecutor(NativeDatabase(file));
       expect((await db.getMonthTotals('2026-01')).totalSpent, 20000);
       expect((await db.select(db.recurringApplied).getSingle()).id, 7);
@@ -91,7 +91,7 @@ void main() {
         ),
         isEmpty,
       );
-      raw.dispose();
+      raw.close();
     });
   }
 
@@ -121,7 +121,7 @@ void main() {
             .every((r) => r['pk'] == 0),
         isTrue,
       );
-      raw.dispose();
+      raw.close();
     },
   );
 

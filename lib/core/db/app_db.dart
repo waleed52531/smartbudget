@@ -1,9 +1,4 @@
-import 'dart:io';
-
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:smartbudget/core/db/report_models.dart';
 import 'package:uuid/uuid.dart';
 
@@ -14,14 +9,6 @@ part 'app_db.g.dart';
 part 'data_integrity.dart';
 
 final _uuid = Uuid();
-
-LazyDatabase _openConnection() {
-  return LazyDatabase(() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dir.path, 'monthly_budget.sqlite'));
-    return NativeDatabase(file);
-  });
-}
 
 /// Tables
 @TableIndex.sql(
@@ -208,6 +195,17 @@ class RecurringApplied extends Table {
   List<String> get customConstraints => ['UNIQUE(template_id, month_id)'];
 }
 
+/// Financial ownership is assigned only when a new encrypted database is created.
+/// Upgraded legacy databases intentionally retain an empty ownership table.
+class DatabaseOwnership extends Table {
+  IntColumn get id => integer().check(const CustomExpression<bool>('id = 1'))();
+  TextColumn get projectId => text()();
+  TextColumn get uid => text()();
+  TextColumn get databaseId => text()();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 @DriftDatabase(
   tables: [
     CategoryNodes,
@@ -216,21 +214,21 @@ class RecurringApplied extends Table {
     Transactions,
     RecurringTemplates,
     RecurringApplied,
+    DatabaseOwnership,
   ],
 )
 class AppDatabase extends _$AppDatabase {
-  AppDatabase() : super(_openConnection());
-
   /// Explicit executors keep tests isolated from the application's database.
   AppDatabase.withExecutor(super.executor);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
       await m.createAll();
+      await _protectOwnership();
     },
     onUpgrade: (m, from, to) async {
       if (from > to) {
@@ -272,6 +270,19 @@ class AppDatabase extends _$AppDatabase {
             throw const DataIntegrityException(['Migration totals changed']);
           }
         }
+        if (from < 4) {
+          await validateIntegrity();
+          final unexpectedOwner = await customSelect(
+            "SELECT 1 FROM sqlite_master WHERE name = 'database_ownership'",
+          ).get();
+          if (unexpectedOwner.isNotEmpty) {
+            throw const DataIntegrityException([
+              'Unexpected ownership metadata',
+            ]);
+          }
+          await m.createTable(databaseOwnership);
+          await _protectOwnership();
+        }
         // Commit schema and version together, including if the process stops here.
         await customStatement('PRAGMA user_version = $to');
       });
@@ -280,6 +291,16 @@ class AppDatabase extends _$AppDatabase {
       await customStatement('PRAGMA foreign_keys = ON');
     },
   );
+
+  Future<void> _protectOwnership() async {
+    for (final operation in ['UPDATE', 'DELETE']) {
+      await customStatement(
+        'CREATE TRIGGER ownership_no_${operation.toLowerCase()} '
+        'BEFORE $operation ON database_ownership '
+        "BEGIN SELECT RAISE(ABORT, 'Ownership is immutable'); END",
+      );
+    }
+  }
 
   Future<void> validateIntegrity() => _validateStoredData(this);
 

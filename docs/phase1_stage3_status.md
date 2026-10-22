@@ -1,0 +1,183 @@
+# Phase 1 Stage 3 — implementation report
+
+Date: 2026-10-21. Branch `Budgeting-with-trasaction`; Phase 0 checkpoint `9b7fef4`
+and all preceding Stage 1/2 work preserved. No commits or deployments were made.
+
+## Security gate
+
+Exactly one minimal read-only request was sent to Google's models endpoint with
+the old `GEMINI_API_KEY` in an HTTPS header. It returned HTTP **400** with machine
+reason **`API_KEY_INVALID`**. The old credential is no longer accepted; its value
+was not printed, placed in a URL, saved to a file or included in this report.
+This was the secret Gemini credential from the earlier exposure, distinct from
+Smart Budget's public Firebase client key. No replacement was created or installed.
+
+Checks found no exact old-key matches in Git-tracked files or the 273 active
+source/configuration files inspected at the gate. The earlier all-local-object
+scan also found none in 315 Git blobs. GitHub API reported zero repository secrets,
+variables, environments and workflow runs, so there were no repository/environment
+CI secret values or Actions logs to inspect. GitHub secret values are not readable
+through that API; no claim is made about unrelated external CI systems.
+
+The old revoked value was still inherited by the IDE/Codex parent. All subsequent
+Smart Budget build/test commands used `tool/clean_run.py`; its child environment
+check returned false for `GEMINI_API_KEY`. The Firebase emulator runner has its own
+allowlist and no saved Firebase login. Emulator tests assert the external variable
+is absent. The parent process was not modified; clearing it requires removing the
+original assignment and restarting the IDE. No unrelated credentials were changed.
+
+Only the exact revoked value was redacted from **44 generated Xcode metadata
+attachments** under ignored build output. Source files, financial databases and
+unrelated credentials were not changed by this cleanup. Earlier tool output cannot
+be retracted, but the exposed credential is revoked. The clean launcher has three
+passing environment/redaction tests, including bearer tokens, reset links and
+common JSON credential fields.
+
+The test-only gRPC advisory remains: Firebase 12.19.0's test client resolves
+`@grpc/grpc-js` 1.9.16, while backend runtime dependencies resolve patched 1.14.6.
+Stage 2's audit reported five high-severity package findings in the test-only
+dependency chain and zero runtime findings. No overrides/downgrades were used.
+See [the Stage 2 risk report](phase1_stage2_status.md) and upstream advisories
+[GHSA-m9gg-hp2v-232j](https://github.com/grpc/grpc-node/security/advisories/GHSA-m9gg-hp2v-232j)
+and [GHSA-f596-whhp-79r4](https://github.com/grpc/grpc-node/security/advisories/GHSA-f596-whhp-79r4).
+
+## Implemented behavior
+
+Email/password login, password reset, native Firebase Auth session restoration,
+logout/account switching and loading/error/locked/authorized-session screens use
+the existing flutter_bloc architecture. Backend authorization is mandatory before
+an initial login is authorized. Offline restoration requires a verified, protected,
+unexpired lease for the same project, current UID and installation.
+
+The Stage 2 Ed25519 JWS verifier, trusted key retrieval, protected vault, native
+monotonic/boot clock, expiry timers, background locking and cancellation of stale
+operations are implemented. Malformed online leases and explicit denials never
+fall back to older grants. Slow storage writes cannot extend signed expiry. A late
+Firebase login, backend response or vault write cannot undo logout.
+
+The entry point contains no financial database/bootstrap dependency. An authorized
+user sees a temporary session screen; `AppShell`, financial repositories/BLoCs,
+legacy seeding, encryption migration and cloud synchronization are not mounted.
+The existing financial app implementation was moved intact to its own file, and
+its two integration/widget tests were updated only to import that location.
+
+See [the authentication guide](phase1_stage3_authentication.md) for the lease
+contract, offline/reboot policy, development commands and required Console setup.
+
+## Files changed in Stage 3
+
+Application/native/dependencies:
+
+* `lib/main.dart` — authentication-only bootstrap, safe setup failure screen.
+* `lib/core/financial_app.dart` — preserved existing financial app/DI class.
+* `pubspec.yaml`, `pubspec.lock` — three new direct dependencies and their graph.
+* `android/app/src/main/kotlin/com/corehines/smartbudget/MainActivity.kt` — native clock bridge.
+* `android/app/src/main/AndroidManifest.xml` — no OS backup/transfer; cleartext disabled.
+* `android/app/src/main/res/xml/data_extraction_rules.xml` — cloud/transfer exclusions.
+* `android/app/src/debug/AndroidManifest.xml` — debug-only network policy.
+* `android/app/src/debug/res/xml/debug_network_security_config.xml` — emulator loopback HTTP only.
+* `linux/flutter/generated_plugin_registrant.cc`, `linux/flutter/generated_plugins.cmake`,
+  `macos/Flutter/GeneratedPluginRegistrant.swift` — regenerated by Flutter tooling.
+
+New authentication modules:
+
+* `lib/features/auth/domain/session_contracts.dart`
+* `lib/features/auth/domain/lease_verifier.dart`
+* `lib/features/auth/data/session_environment.dart`
+* `lib/features/auth/data/authorization_gateway.dart`
+* `lib/features/auth/data/firebase_session_services.dart`
+* `lib/features/auth/data/session_vault.dart`
+* `lib/features/auth/presentation/session_cubit.dart`
+* `lib/features/auth/presentation/session_app.dart`
+
+Tests/tooling/docs:
+
+* `test/auth/lease_verifier_test.dart`
+* `test/auth/session_cubit_test.dart`
+* `test/auth/session_app_test.dart`
+* `test/auth/platform_storage_test.dart`
+* `test/auth/backend_emulator_test.dart`
+* `test/auth/support.dart`
+* `test/fixtures/stage2_authorization.json` — synthetic public cross-language fixture.
+* `test/widget_test.dart`, `test/navigation_refresh_test.dart` — financial app import location only.
+* `functions/test/emulator.test.ts` — credential-inheritance assertion.
+* `functions/tools/run-emulators.mjs` — optional combined Flutter test run.
+* `functions/tools/run-client-tests.mjs` — ordered backend/client demo tests.
+* `functions/tools/create-lease-fixture.mjs` — actual Stage 2 signer fixture generator.
+* `tool/clean_run.py`, `tool/clean_run_test.py` — sanitized launcher and tests.
+* `docs/phase1_stage3_authentication.md`, `docs/phase1_stage3_status.md`.
+
+Ignored generated artifacts include normal compilation outputs/test logs and the
+44 metadata attachments described above. Remaining Git changes are preceding
+Stage 1/2 work; schema, financial repositories and Phase 0 migrations were not edited.
+
+## Dependencies and validation
+
+Flutter/Dart remain 3.44.2/3.12.2. New direct packages resolved:
+`firebase_app_check` **0.5.0**, `cryptography` **2.9.0** and
+`flutter_secure_storage` **10.3.4**. Storage 11.2.0 conflicted with existing
+`share_plus`/win32 constraints; normal resolution of maintained 10.3.4 succeeded,
+with Windows storage 4.1.0 and Darwin storage 0.3.2. No overrides, SDK upgrades or
+dependency checks were bypassed. Existing Firebase/Drift/sqlite3 versions remain.
+
+Actual commands (Flutter/npm commands used the clean launcher; backend used the
+isolated Node 22.23.3 runtime and Java 21.0.8):
+
+| Command/check | Result |
+| --- | --- |
+| Single old-key read-only verification | HTTP 400 / `API_KEY_INVALID` |
+| Baseline `npm --prefix functions test` | 40 passed |
+| Baseline `flutter test` | 59 passed |
+| `python3 tool/clean_run_test.py` | 3 passed |
+| `flutter pub get` with compatible storage version | Passed |
+| `dart format` on changed files only | Passed |
+| Final `flutter analyze` | No issues |
+| Final `flutter test` | 89 passed; one emulator-only test intentionally skipped here |
+| Final `npm --prefix functions test` | 40 passed |
+| `npm --prefix functions run test:emulator -- --flutter` | 7 backend emulator tests and 1 live Dart client integration test passed |
+| `flutter build apk --debug` | Passed; latest native policy/clock and Dart security changes included |
+| APK application ID | `com.corehines.smartbudget` |
+| `git diff --check` | Passed |
+| Final source/build credential scan | 16,042 files checked (databases/dependency trees excluded); zero exact old-key matches |
+| Final APK credential scan | Zero exact old-key matches, including decompressed archive entries |
+| Legacy backup checksum | Readable; SHA-256 still matches the verified backup metadata |
+
+Artifact: `build/app/outputs/flutter-apk/app-debug.apk`, **182,418,448 bytes**.
+SHA-256: `be64112816013556a58ebfff7a9c6ba6f1b0ad46b1158a47c6953c5355fc6c76`.
+The final manifest inspection confirmed `allowBackup=false`,
+`usesCleartextTraffic=false`, and the debug-only network/data-extraction policies.
+The debug XML permits only the three documented loopback emulator hosts.
+
+The 89 Flutter passes retain all 59 preceding tests and add 30 checks for real
+Node-issued signature interoperability, binding/expiry/policy/rotation, invalid
+signatures/keys, initial online requirement, restoration/offline/reboot/rollback,
+revocation, login/reset errors, wrong-user grants, logout/account switching,
+in-flight login/response/storage races, delayed persistence expiry, vault policy,
+and absence of financial navigation. The separate live client test uses real demo
+Auth REST login/reset and Stage 2 callable/JWKS responses, then verifies offline
+restoration and revoked-access rejection through the Dart gateway/Cubit. Native
+Firebase adapters and secure storage are not mocked in release code; host tests
+use explicit test doubles and are not presented as native-device security proof.
+
+## Remaining limitations and review boundary
+
+No production Firebase settings, IAM, signing keys, billing or backend deployments
+were changed. Live production login/authorization needs the Console, App Check,
+signing and deployment prerequisites in the guide. No production authorization
+success is claimed. Real-device Firebase SDK restoration, KeyStore persistence,
+native clock behavior and Play Integrity acceptance still require device testing;
+the APK was built but not installed or launched on the TECNO legacy device.
+
+Valid offline leases cannot discover revocation or emergency key removal until
+reconnection/expiry, at most 24 hours. Clock rollback/reboot requires reauthorization;
+rooted/compromised OS behavior is not solved by local guards. Physical financial
+database isolation/encryption and explicit legacy ownership/migration are future
+stages and remain prerequisites before exposing financial screens.
+
+The debug build emits Flutter's forward-looking Kotlin Gradle Plugin migration
+warning. It succeeds on the approved current SDK; no unrelated native rewrite or
+SDK upgrade was attempted. Apple bundle IDs/Firebase registrations remain pending.
+
+Stage 3 is ready for code/security review with the above native/production testing
+limits. Stop here; do not enable financial navigation or begin Stage 4 without the
+user's separate approval.

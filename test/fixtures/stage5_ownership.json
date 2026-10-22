@@ -1,0 +1,20 @@
+{
+  "project": "smartbudget-test",
+  "uid": "a",
+  "databaseId": "12345678-1234-4234-8234-123456789abc",
+  "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "now": 1800000000,
+  "grant": "eyJhbGciOiJFZERTQSIsInR5cCI6InNiLWxlZ2FjeS1vd25lcnNoaXArand0Iiwia2lkIjoic3ludGhldGljLWNvbnRyYWN0In0.eyJpc3MiOiJzbWFydGJ1ZGdldDpzbWFydGJ1ZGdldC10ZXN0OmxlZ2FjeS1vd25lcnNoaXAiLCJhdWQiOiJzbWFydGJ1ZGdldC10ZXN0IiwicHJvamVjdF9pZCI6InNtYXJ0YnVkZ2V0LXRlc3QiLCJzdWIiOiJhIiwiZGF0YWJhc2VfaWQiOiIxMjM0NTY3OC0xMjM0LTQyMzQtODIzNC0xMjM0NTY3ODlhYmMiLCJzb3VyY2VfaWQiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwicG9saWN5X3ZlcnNpb24iOjEsImlhdCI6MTgwMDAwMDAwMCwiZXhwIjoxODAwMDAzNjAwLCJqdGkiOiIxMGM5Y2JkMS1iMzU2LTRmZGEtODAyNC1jZTY1NzIyNDgyMTIifQ._OCjKrDcYeO3MLFL2Ux5mZluc4GXGjVzZbnccqXmq2QMNEvnoiVtg8cF6GRmRJaW5KvahNxL-Xxr23Rp0nZmDg",
+  "keys": {
+    "keys": [
+      {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "hC8qnePMRXg5COAez-IDxTo33VfEX3qWp1hlikrEKro",
+        "kid": "synthetic-contract",
+        "alg": "EdDSA",
+        "use": "sig"
+      }
+    ]
+  }
+}

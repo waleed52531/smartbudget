@@ -11,7 +11,7 @@ import 'package:smartbudget/features/dashboard/presentation/bloc/dashboard_bloc.
 import 'package:smartbudget/features/recurring/data/recurring_repository.dart';
 import 'package:smartbudget/features/reports/presentation/reportsbloc/reports_bloc.dart';
 import 'package:smartbudget/features/transactions/data/transaction_repository.dart';
-import 'package:smartbudget/main.dart';
+import 'package:smartbudget/core/financial_app.dart';
 
 void main() {
   testWidgets(

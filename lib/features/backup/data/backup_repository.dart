@@ -64,7 +64,8 @@ class BackupRepository {
         decoded['format'] != 'monthly_budget_backup') {
       throw const FormatException('Not a Smart Budget backup.');
     }
-    if (decoded['version'] != 1 || ![2, 3].contains(decoded['schemaVersion'])) {
+    if (decoded['version'] != 1 ||
+        ![2, 3, 4].contains(decoded['schemaVersion'])) {
       throw const FormatException(
         'Unsupported backup format or database version.',
       );

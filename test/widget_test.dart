@@ -2,7 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smartbudget/core/db/app_db.dart';
-import 'package:smartbudget/main.dart';
+import 'package:smartbudget/core/financial_app.dart';
 
 void main() {
   testWidgets('Smart Budget opens its dashboard and navigation', (
